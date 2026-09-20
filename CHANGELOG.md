@@ -38,6 +38,9 @@ change:
   mounting, drain/resume for upgrades and a health check.
 - `MergePool.Service`: Windows service host wiring the engine to WinFsp and the named pipe, with
   an ACL that lets the signed-in user's UI connect.
+- `MergePool.Ui`: WPF front end listing fixed and removable drives with letter, label, size and
+  free space, tick-to-pool selection, mount letter picker, and live per-drive pool status
+  including throttling and measured throughput. Reconnects on its own when the service restarts.
 
 ### Compatibility
 

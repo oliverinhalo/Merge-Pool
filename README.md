@@ -25,6 +25,7 @@ drive served by [WinFsp](https://winfsp.dev) — no custom kernel driver.
 | `src/MergePool.Engine` | Pool engine: config, runtimes, mounting, drain/resume, health. Portable. |
 | `src/MergePool.Fs.WinFsp` | WinFsp adapter and mounter. Windows only; needs WinFsp installed. |
 | `src/MergePool.Service` | Windows service host. Windows only. |
+| `src/MergePool.Ui` | WPF front end. Windows only. |
 | `tests/MergePool.Core.Tests` | Unit tests over temp folders standing in for drives. |
 | `tests/MergePool.Integration.Tests` | End-to-end scenarios over fake drives. |
 | `tests/MergePool.Ipc.Tests` | Protocol, framing and engine-over-pipe tests. |
