@@ -34,6 +34,10 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
+      # The WinFsp host references winfsp-msil.dll from the WinFsp install directory; WinFsp does
+      # not publish it on NuGet.
+      - name: Install WinFsp
+        run: choco install winfsp --yes --no-progress
       - run: dotnet restore MergePool.sln
       - run: dotnet build MergePool.sln --no-restore -c Release
       - run: dotnet test MergePool.sln --no-build -c Release --verbosity normal

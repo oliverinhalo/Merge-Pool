@@ -22,6 +22,11 @@ change:
   unknown-field preservation.
 - Unit tests covering path handling, merged listings, degraded/rejoining drives, placement and
   config migration.
+- Pool file system engine: open/read/write/rename/delete semantics with NTSTATUS-shaped results,
+  merged directory enumeration, and whole-file relocation when a write outgrows its drive.
+- WinFsp host (`MergePool.Fs.WinFsp`): WinFsp adapter, mounter, and pass-through of security
+  descriptors and alternate data streams.
+- Integration tests running end-to-end scenarios over fake drives.
 
 ### Compatibility
 
