@@ -32,8 +32,16 @@ change:
   live speed factor feeding placement scores.
 - Low-priority pausable rebalancer that evens out drive usage, skips files in use, respects a
   bandwidth cap and never moves the same file twice.
+- `MergePool.Ipc`: versioned named-pipe protocol with a handshake, capability negotiation,
+  length-prefixed JSON framing and structured errors.
+- `MergePool.Engine`: the pool engine the service hosts — configuration, per-pool runtimes,
+  mounting, drain/resume for upgrades and a health check.
+- `MergePool.Service`: Windows service host wiring the engine to WinFsp and the named pipe, with
+  an ACL that lets the signed-in user's UI connect.
 
 ### Compatibility
 
 - Data format: **1** (`.PoolPart-{GUID}` folders, mirrored paths, advisory `poolpart.json`).
 - Config schema: **1**.
+- IPC protocol: **1** (minimum supported **1**). The service accepts every version from the
+  minimum to the current one, so an old UI keeps working against a new service.
