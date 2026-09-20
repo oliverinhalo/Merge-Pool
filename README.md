@@ -1,63 +1,82 @@
 # MergePool
 
-A DrivePool-style drive pooling app for Windows 10/11. Selected drives are merged into one virtual
-drive served by [WinFsp](https://winfsp.dev) — no custom kernel driver.
+A DrivePool-style drive pooling app for Windows 10 and 11. Pick some drives, pick a drive letter,
+and they appear as one. The virtual drive is served by [WinFsp](https://winfsp.dev) — there is no
+custom kernel driver.
+
+## Getting started
+
+| I want to… | Go to |
+| --- | --- |
+| **Install and use MergePool on Windows** | **[docs/INSTALL.md](docs/INSTALL.md)** |
+| Build it from source (Windows, Linux or macOS) | [docs/BUILDING.md](docs/BUILDING.md) |
+| Understand how updates avoid breaking a running setup | [docs/UPGRADES.md](docs/UPGRADES.md) |
+| See what changed | [CHANGELOG.md](CHANGELOG.md) |
+
+### Quick start (Windows)
+
+1. Install the [.NET 8 Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/8.0).
+2. Run `MergePool-0.1.0-setup.exe` as an administrator. It installs WinFsp if you do not have it.
+3. Open MergePool, tick the drives you want, choose a drive letter, click **Create pool**.
+
+Full detail, including what to expect and what to do when something goes wrong, is in
+[docs/INSTALL.md](docs/INSTALL.md).
 
 ## What it does
 
-- Pools any set of fixed or removable drives behind a single drive letter.
-- Stores pooled files inside a `\.PoolPart-{GUID}\` folder on each drive, as **normal files in
-  mirrored paths**. Uninstall MergePool and every file is still there, readable, where you'd expect.
-- Never touches anything outside those folders. Existing drive content is left alone unless you
-  explicitly adopt it (a same-volume move, never a copy).
-- Never splits a file: each file lives whole on one drive; folders may span drives.
-- Identifies drives by volume GUID, so drive letters can move. A missing drive means a degraded
-  pool, not a broken one, and it rejoins automatically when it returns.
-- Places new files on the drive with the best `free space × speed factor` score, skipping drives it
-  detects as throttled (SMR cache exhaustion, USB, thermal).
+- **Pools any set of fixed or removable drives** behind a single drive letter.
+- **Your files stay ordinary files.** Pooled data lives in a `\.PoolPart-{GUID}\` folder on each
+  drive, in the same folder structure you see in the pool, with normal names, permissions and
+  timestamps. Uninstall MergePool, or move a drive to another PC, and everything is still there and
+  still readable.
+- **Leaves your existing data alone.** MergePool only ever writes inside its own `.PoolPart-{GUID}`
+  folders. Adopting a drive's existing content into the pool is opt-in, and it is a move within the
+  same drive — never a copy between drives.
+- **Never splits a file.** Each file lives whole on one drive; folders may span drives. Renames and
+  moves stay on the drive the file is already on, so they are instant.
+- **Survives a drive going away.** Drives are identified by volume GUID, so letters can move. A
+  missing drive means a degraded pool, not a broken one, and it rejoins automatically when it
+  returns.
+- **Puts new files where they belong.** Placement scores each drive on free space × speed, and skips
+  drives it detects as throttled — an SMR disk whose cache is exhausted, a slow USB enclosure, a
+  drive that is overheating — until they recover.
+- **Evens itself out in the background.** A low-priority, pausable rebalancer moves files off the
+  fullest drives, skipping anything in use and capping its own bandwidth.
 
-## Layout
+## Updates never break a running setup
 
-| Path | What it is |
-| --- | --- |
-| `src/MergePool.Core` | Pool model, union view, placement, config. Portable, no Windows deps. |
-| `src/MergePool.Ipc` | Versioned named-pipe protocol, server and client. Portable. |
-| `src/MergePool.Engine` | Pool engine: config, runtimes, mounting, drain/resume, health. Portable. |
-| `src/MergePool.Fs.WinFsp` | WinFsp adapter and mounter. Windows only; needs WinFsp installed. |
-| `src/MergePool.Service` | Windows service host. Windows only. |
-| `src/MergePool.Ui` | WPF front end. Windows only. |
-| `src/MergePool.Update` | Side-by-side install layout and the upgrade/rollback sequence. Portable. |
-| `src/MergePool.Updater` | Upgrade CLI wiring the coordinator to the service and the junction. Windows only. |
-| `installer/` | Inno Setup script and the publish + package build script. |
-| `tests/MergePool.Core.Tests` | Unit tests over temp folders standing in for drives. |
-| `tests/MergePool.Integration.Tests` | End-to-end scenarios over fake drives. |
-| `tests/MergePool.Ipc.Tests` | Protocol, framing and engine-over-pipe tests. |
-| `tests/MergePool.Update.Tests` | Upgrade, rollback and install-layout tests. |
+This is a design constraint, not an aspiration, and it shapes the architecture:
 
-## Building
+- The **on-disk format is stable** and independent of the app version.
+- The **engine runs as a Windows service**; the UI is just a client. They talk over a named pipe with
+  a **versioned protocol**, so an old UI keeps working against a new service.
+- **Config is migrated forward only**, backed up before migrating, with unknown fields preserved.
+- Versions install **side by side** with an atomic `current` swap. An upgrade is drain → stop → swap
+  → start → health check, and **rolls back automatically** if the new version does not come up
+  healthy.
 
-```
-dotnet build MergePool.sln            # Windows: everything
-dotnet build MergePool.Portable.slnf  # any OS: the portable core and its tests
-dotnet test MergePool.Portable.slnf
-```
+See [docs/UPGRADES.md](docs/UPGRADES.md).
 
-Windows-only projects (WinFsp host, service, WPF UI) are excluded from the portable solution filter
-and fail fast if built on another OS.
+## Repository layout
 
-## Compatibility promise
+| Path | What it is | Builds on |
+| --- | --- | --- |
+| `src/MergePool.Core` | Pool model, union view, placement, throttling, config | any OS |
+| `src/MergePool.Ipc` | Versioned named-pipe protocol, server and client | any OS |
+| `src/MergePool.Engine` | Pool engine: config, runtimes, mounting, drain/resume, health | any OS |
+| `src/MergePool.Update` | Side-by-side install layout, upgrade and rollback | any OS |
+| `src/MergePool.Fs.WinFsp` | WinFsp adapter and mounter | Windows |
+| `src/MergePool.Service` | Windows service host | Windows |
+| `src/MergePool.Ui` | WPF front end | Windows |
+| `src/MergePool.Updater` | Upgrade CLI | Windows |
+| `tests/` | 208 tests, all runnable on any OS | any OS |
+| `installer/` | Inno Setup script and the publish + package script | Windows |
 
-Updates must never break a running setup:
+## Status
 
-- The on-disk data format is stable and independent of the app version.
-- The engine runs as a Windows service; the UI talks to it over a named pipe with a versioned
-  protocol, so an old UI keeps working against a new service.
-- Config is migrated forward only, backed up before migrating, and unknown fields are preserved.
+Version 0.1.0. All six milestones are in: core pool library, WinFsp mount, placement and throttle
+engine, service and IPC, WPF UI, installer and updater.
 
-See [CHANGELOG.md](CHANGELOG.md) and [docs/UPGRADES.md](docs/UPGRADES.md).
-
-## Installing
-
-`installer\build.ps1` publishes the service, UI and updater and compiles the Inno Setup installer.
-Setup needs administrator rights: it installs WinFsp when missing and registers the MergePool
-service. Uninstalling removes the app and leaves every pooled file exactly where it is.
+208 tests pass on Linux and Windows, and CI compiles the full Windows solution against a real WinFsp
+install. What has **not** happened yet is a run on real hardware: mounting, the service install, the
+UI and the installer are compiler-verified but have not been exercised on a physical Windows machine.

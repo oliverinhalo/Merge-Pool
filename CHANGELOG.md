@@ -47,6 +47,15 @@ change:
 - Inno Setup installer: requires administrator, checks for WinFsp and installs it when missing,
   registers the service against `current`, and leaves every pooled file in place on uninstall.
 
+### Documentation
+
+- `docs/INSTALL.md`: Windows install and first-run guide — prerequisites, what the installer does,
+  creating a pool, where files live, updating, uninstalling and troubleshooting, plus a table of
+  which operating systems can run MergePool at all.
+- `docs/BUILDING.md`: build instructions separated per operating system. Windows builds everything
+  including the installer; Linux and macOS build and test the portable core.
+- README rewritten as a front door that routes to the right guide.
+
 ### Compatibility
 
 - Data format: **1** (`.PoolPart-{GUID}` folders, mirrored paths, advisory `poolpart.json`).
