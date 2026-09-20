@@ -19,8 +19,6 @@ public sealed class PoolWinFspFileSystem(PoolFileSystemEngine engine, string vol
     private const uint FileDirectoryFile = 0x00000001;
     private const uint FileDeleteOnClose = 0x00001000;
 
-    private const uint CleanupDelete = 0x01;
-
     private readonly PoolFileSystemEngine _engine = engine ?? throw new ArgumentNullException(nameof(engine));
 
     private string _volumeLabel = volumeLabel;
@@ -410,22 +408,6 @@ public sealed class PoolWinFspFileSystem(PoolFileSystemEngine engine, string vol
         fileName = PoolPath.GetName(entry.PoolPath);
         fileInfo = ToWinFsp(entry);
         return true;
-    }
-
-    public override int GetDirInfoByName(object fileNode, object fileDesc, string fileName, out WinFspFileInfo fileInfo)
-    {
-        fileInfo = default;
-        var handle = (PoolFileHandle)fileDesc;
-        var poolPath = PoolPath.Combine(handle.PoolPath, fileName);
-
-        var status = _engine.GetFileInfo(poolPath, out var info);
-        if (status != PoolFsStatus.Success || info is null)
-        {
-            return NtStatus.From(status);
-        }
-
-        fileInfo = ToWinFsp(info);
-        return NtStatus.Success;
     }
 
     public override int ExceptionHandler(Exception exception) =>

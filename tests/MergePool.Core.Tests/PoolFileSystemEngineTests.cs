@@ -245,6 +245,10 @@ public sealed class PoolFileSystemEngineTests
         var status = engine.Write(handle!, new byte[4096], 4, false, false, out _, out _);
 
         Assert.Equal(PoolFsStatus.DiskFull, status);
+
+        // Read the file back only once the handle is closed: on Windows the open write handle
+        // would otherwise deny the read.
+        engine.Close(handle!);
         Assert.Equal("seed", File.ReadAllText(pool.View.FindFile("growing.bin")!.HostPath));
     }
 
