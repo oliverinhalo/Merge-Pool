@@ -1,0 +1,46 @@
+# MergePool
+
+A DrivePool-style drive pooling app for Windows 10/11. Selected drives are merged into one virtual
+drive served by [WinFsp](https://winfsp.dev) — no custom kernel driver.
+
+## What it does
+
+- Pools any set of fixed or removable drives behind a single drive letter.
+- Stores pooled files inside a `\.PoolPart-{GUID}\` folder on each drive, as **normal files in
+  mirrored paths**. Uninstall MergePool and every file is still there, readable, where you'd expect.
+- Never touches anything outside those folders. Existing drive content is left alone unless you
+  explicitly adopt it (a same-volume move, never a copy).
+- Never splits a file: each file lives whole on one drive; folders may span drives.
+- Identifies drives by volume GUID, so drive letters can move. A missing drive means a degraded
+  pool, not a broken one, and it rejoins automatically when it returns.
+- Places new files on the drive with the best `free space × speed factor` score, skipping drives it
+  detects as throttled (SMR cache exhaustion, USB, thermal).
+
+## Layout
+
+| Path | What it is |
+| --- | --- |
+| `src/MergePool.Core` | Pool model, union view, placement, config. Portable, no Windows deps. |
+| `tests/MergePool.Core.Tests` | Unit tests over temp folders standing in for drives. |
+
+## Building
+
+```
+dotnet build MergePool.sln            # Windows: everything
+dotnet build MergePool.Portable.slnf  # any OS: the portable core and its tests
+dotnet test MergePool.Portable.slnf
+```
+
+Windows-only projects (WinFsp host, service, WPF UI) are excluded from the portable solution filter
+and fail fast if built on another OS.
+
+## Compatibility promise
+
+Updates must never break a running setup:
+
+- The on-disk data format is stable and independent of the app version.
+- The engine runs as a Windows service; the UI talks to it over a named pipe with a versioned
+  protocol, so an old UI keeps working against a new service.
+- Config is migrated forward only, backed up before migrating, and unknown fields are preserved.
+
+See [CHANGELOG.md](CHANGELOG.md).

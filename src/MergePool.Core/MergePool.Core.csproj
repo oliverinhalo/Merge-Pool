@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>MergePool.Core</RootNamespace>
+    <AssemblyName>MergePool.Core</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="MergePool.Core.Tests" />
+    <InternalsVisibleTo Include="MergePool.Integration.Tests" />
+  </ItemGroup>
+
+</Project>

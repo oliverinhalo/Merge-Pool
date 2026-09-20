@@ -1,0 +1,9 @@
+{
+  "solution": {
+    "path": "MergePool.sln",
+    "projects": [
+      "src\\MergePool.Core\\MergePool.Core.csproj",
+      "tests\\MergePool.Core.Tests\\MergePool.Core.Tests.csproj"
+    ]
+  }
+}
