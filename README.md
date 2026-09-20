@@ -26,9 +26,13 @@ drive served by [WinFsp](https://winfsp.dev) — no custom kernel driver.
 | `src/MergePool.Fs.WinFsp` | WinFsp adapter and mounter. Windows only; needs WinFsp installed. |
 | `src/MergePool.Service` | Windows service host. Windows only. |
 | `src/MergePool.Ui` | WPF front end. Windows only. |
+| `src/MergePool.Update` | Side-by-side install layout and the upgrade/rollback sequence. Portable. |
+| `src/MergePool.Updater` | Upgrade CLI wiring the coordinator to the service and the junction. Windows only. |
+| `installer/` | Inno Setup script and the publish + package build script. |
 | `tests/MergePool.Core.Tests` | Unit tests over temp folders standing in for drives. |
 | `tests/MergePool.Integration.Tests` | End-to-end scenarios over fake drives. |
 | `tests/MergePool.Ipc.Tests` | Protocol, framing and engine-over-pipe tests. |
+| `tests/MergePool.Update.Tests` | Upgrade, rollback and install-layout tests. |
 
 ## Building
 
@@ -50,4 +54,10 @@ Updates must never break a running setup:
   protocol, so an old UI keeps working against a new service.
 - Config is migrated forward only, backed up before migrating, and unknown fields are preserved.
 
-See [CHANGELOG.md](CHANGELOG.md).
+See [CHANGELOG.md](CHANGELOG.md) and [docs/UPGRADES.md](docs/UPGRADES.md).
+
+## Installing
+
+`installer\build.ps1` publishes the service, UI and updater and compiles the Inno Setup installer.
+Setup needs administrator rights: it installs WinFsp when missing and registers the MergePool
+service. Uninstalling removes the app and leaves every pooled file exactly where it is.

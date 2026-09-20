@@ -7,7 +7,9 @@
       "src\\MergePool.Ipc\\MergePool.Ipc.csproj",
       "tests\\MergePool.Core.Tests\\MergePool.Core.Tests.csproj",
       "tests\\MergePool.Integration.Tests\\MergePool.Integration.Tests.csproj",
-      "tests\\MergePool.Ipc.Tests\\MergePool.Ipc.Tests.csproj"
+      "tests\\MergePool.Ipc.Tests\\MergePool.Ipc.Tests.csproj",
+      "src\\MergePool.Update\\MergePool.Update.csproj",
+      "tests\\MergePool.Update.Tests\\MergePool.Update.Tests.csproj"
     ]
   }
 }

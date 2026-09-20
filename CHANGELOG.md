@@ -12,7 +12,7 @@ change:
 - **Config schema** — `config.json` `schemaVersion`, migrated forward only, backed up first,
   unknown fields preserved.
 
-## [Unreleased]
+## [0.1.0] - 2026-09-20
 
 ### Added
 
@@ -41,6 +41,11 @@ change:
 - `MergePool.Ui`: WPF front end listing fixed and removable drives with letter, label, size and
   free space, tick-to-pool selection, mount letter picker, and live per-drive pool status
   including throttling and measured throughput. Reconnects on its own when the service restarts.
+- `MergePool.Update` / `MergePool.Updater`: side-by-side versioned install layout with an atomic
+  `current` swap, and an upgrade sequence of drain, stop, swap, start, health check, with
+  automatic rollback to the previous version when the new one does not come up healthy.
+- Inno Setup installer: requires administrator, checks for WinFsp and installs it when missing,
+  registers the service against `current`, and leaves every pooled file in place on uninstall.
 
 ### Compatibility
 
