@@ -84,6 +84,41 @@ public sealed class RebalancerTests
     }
 
     [Fact]
+    public void A_plan_takes_several_files_and_never_the_same_one_twice()
+    {
+        using var pool = new TempPool();
+        var (_, full) = pool.AddDrive("Full", totalBytes: 1000, freeBytes: 20);
+        pool.AddDrive("Empty", totalBytes: 1000, freeBytes: 980);
+
+        pool.WriteInto(full, "a.bin", new string('a', 300));
+        pool.WriteInto(full, "b.bin", new string('b', 200));
+        pool.WriteInto(full, "c.bin", new string('c', 100));
+
+        var plan = new Rebalancer(pool, Options()).Plan();
+
+        Assert.True(plan.Moves.Count > 1);
+        Assert.Equal(plan.Moves.Count, plan.Moves.Select(m => m.PoolPath).Distinct().Count());
+
+        // Largest first, so the imbalance closes in as few moves as possible.
+        Assert.Equal("a.bin", plan.Moves[0].PoolPath);
+        Assert.True(plan.Moves[0].Bytes >= plan.Moves[1].Bytes);
+    }
+
+    [Fact]
+    public void Planning_stops_once_the_source_drive_has_nothing_left_to_give()
+    {
+        using var pool = new TempPool();
+        var (_, full) = pool.AddDrive("Full", totalBytes: 1000, freeBytes: 10);
+        pool.AddDrive("Empty", totalBytes: 1000, freeBytes: 990);
+        pool.WriteInto(full, "only.bin", new string('o', 50));
+
+        var plan = new Rebalancer(pool, Options()).Plan();
+
+        // One movable file means one move, however far off balance the pool is.
+        Assert.Single(plan.Moves);
+    }
+
+    [Fact]
     public void A_file_in_use_is_skipped_rather_than_moved()
     {
         using var pool = new TempPool();

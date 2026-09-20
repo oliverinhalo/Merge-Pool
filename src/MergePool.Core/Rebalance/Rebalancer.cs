@@ -54,7 +54,10 @@ public sealed class Rebalancer(
         var projected = snapshot.OnlineParts.ToDictionary(p => p.PartId, p => (double)p.FreeBytes);
         var totals = snapshot.OnlineParts.ToDictionary(p => p.PartId, p => (double)p.TotalBytes);
         var moves = new List<RebalanceMove>();
-        var view = new UnionView(_topology);
+
+        // Each drive's movable files are listed once, largest first, and consumed as moves are
+        // planned. Re-walking the tree on every round would make planning quadratic on a big pool.
+        var candidates = new Dictionary<Guid, Queue<FileCandidate>>();
 
         for (var round = 0; round < MaxRounds; round++)
         {
@@ -71,16 +74,22 @@ public sealed class Rebalancer(
                 break;
             }
 
-            var candidate = NextCandidate(view, snapshot, source, moves);
-            if (candidate is null)
+            var queue = candidates.TryGetValue(source, out var existing)
+                ? existing
+                : candidates[source] = MovableFiles(snapshot, source);
+
+            if (queue.Count == 0)
             {
                 break;
             }
 
+            var candidate = queue.Peek();
             if (projected[destination] - candidate.Bytes < 0)
             {
                 break;
             }
+
+            queue.Dequeue();
 
             moves.Add(new RebalanceMove
             {
@@ -248,66 +257,43 @@ public sealed class Rebalancer(
             .Select(entry => entry.Key)
             .FirstOrDefault();
 
-    /// <summary>Largest file on the drive that is not already planned for a move.</summary>
-    private RebalanceMove? NextCandidate(
-        UnionView view,
-        PoolSnapshot snapshot,
-        Guid sourcePartId,
-        List<RebalanceMove> planned)
+    private readonly record struct FileCandidate(string PoolPath, long Bytes);
+
+    /// <summary>
+    /// Every file on a drive that the rebalancer is willing to move, largest first. Walked once per
+    /// plan.
+    /// </summary>
+    private Queue<FileCandidate> MovableFiles(PoolSnapshot snapshot, Guid sourcePartId)
     {
         var part = snapshot.FindPart(sourcePartId);
         if (part?.RootPath is null)
         {
-            return null;
+            return new Queue<FileCandidate>();
         }
 
-        var alreadyPlanned = planned.Select(static m => m.PoolPath).ToHashSet(PoolPath.Comparer);
-
-        FileInfo? best = null;
+        var found = new List<FileCandidate>();
         try
         {
             foreach (var file in new DirectoryInfo(part.RootPath).EnumerateFiles("*", SearchOption.AllDirectories))
             {
-                if (file.Length > _options.MaxFileBytes || file.Length <= 0)
+                if (file.Length <= 0 || file.Length > _options.MaxFileBytes)
                 {
                     continue;
                 }
 
                 var poolPath = ToPoolPath(part.RootPath, file.FullName);
-                if (poolPath is null || alreadyPlanned.Contains(poolPath))
+                if (poolPath is not null)
                 {
-                    continue;
-                }
-
-                if (best is null || file.Length > best.Length)
-                {
-                    best = file;
+                    found.Add(new FileCandidate(poolPath, file.Length));
                 }
             }
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            return null;
+            // A drive that went away mid-walk simply contributes nothing to this plan.
         }
 
-        if (best is null)
-        {
-            return null;
-        }
-
-        var path = ToPoolPath(part.RootPath, best.FullName);
-        if (path is null || view.FindDirectory(path) is not null)
-        {
-            return null;
-        }
-
-        return new RebalanceMove
-        {
-            PoolPath = path,
-            FromPartId = sourcePartId,
-            ToPartId = Guid.Empty,
-            Bytes = best.Length,
-        };
+        return new Queue<FileCandidate>(found.OrderByDescending(static c => c.Bytes));
     }
 
     private static string? ToPoolPath(string partRoot, string hostPath)
