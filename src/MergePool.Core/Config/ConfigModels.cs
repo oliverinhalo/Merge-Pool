@@ -127,6 +127,29 @@ public sealed class PlacementOptions
     [JsonPropertyName("throttleExitSamples")]
     public int ThrottleExitSamples { get; set; } = 3;
 
+    /// <summary>Throughput treated as a speed factor of 1.0 when converting samples to scores.</summary>
+    [JsonPropertyName("referenceThroughputBytesPerSecond")]
+    public double ReferenceThroughputBytesPerSecond { get; set; } = 120d * 1024 * 1024;
+
+    /// <summary>Clamp on the measured speed factor, so one odd sample cannot dominate placement.</summary>
+    [JsonPropertyName("minSpeedFactor")]
+    public double MinSpeedFactor { get; set; } = 0.05;
+
+    [JsonPropertyName("maxSpeedFactor")]
+    public double MaxSpeedFactor { get; set; } = 8.0;
+
+    /// <summary>Samples needed before a drive's baseline is trusted enough to call it throttled.</summary>
+    [JsonPropertyName("minSamplesForThrottleDetection")]
+    public int MinSamplesForThrottleDetection { get; set; } = 5;
+
+    /// <summary>Writes smaller than this only feed latency: they say nothing about throughput.</summary>
+    [JsonPropertyName("minThroughputSampleBytes")]
+    public long MinThroughputSampleBytes { get; set; } = 64 * 1024;
+
+    /// <summary>How fast the baseline follows a sample that is better than it.</summary>
+    [JsonPropertyName("baselineRiseAlpha")]
+    public double BaselineRiseAlpha { get; set; } = 0.3;
+
     /// <summary>How long a drive may sit idle before the light probe measures it.</summary>
     [JsonPropertyName("idleProbeIntervalSeconds")]
     public double IdleProbeIntervalSeconds { get; set; } = 120;

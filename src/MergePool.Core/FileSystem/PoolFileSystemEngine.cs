@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using MergePool.Core.Model;
 using MergePool.Core.Paths;
 using MergePool.Core.Placement;
@@ -14,13 +15,15 @@ public sealed class PoolFileSystemEngine(
     IPoolTopology topology,
     IPlacementStrategy placement,
     FileRelocator? relocator = null,
-    PoolFileSystemOptions? options = null)
+    PoolFileSystemOptions? options = null,
+    IIoObserver? ioObserver = null)
 {
     private readonly IPoolTopology _topology = topology ?? throw new ArgumentNullException(nameof(topology));
     private readonly PoolOperations _operations = new(topology, placement);
     private readonly IPlacementStrategy _placement = placement ?? throw new ArgumentNullException(nameof(placement));
     private readonly FileRelocator _relocator = relocator ?? new FileRelocator();
     private readonly PoolFileSystemOptions _options = options ?? new PoolFileSystemOptions();
+    private readonly IIoObserver? _ioObserver = ioObserver;
 
     public UnionView View => _operations.View;
 
@@ -258,7 +261,11 @@ public sealed class PoolFileSystemEngine(
             }
 
             stream.Position = offset;
+
+            var started = Stopwatch.GetTimestamp();
             transferred = stream.Read(buffer);
+            Observe(handle.PartId, IoKind.Read, transferred, started);
+
             return transferred == 0 ? PoolFsStatus.EndOfFile : PoolFsStatus.Success;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -316,7 +323,11 @@ public sealed class PoolFileSystemEngine(
 
             stream = handle.RequireStream();
             stream.Position = start;
+
+            var started = Stopwatch.GetTimestamp();
             stream.Write(buffer);
+            Observe(handle.PartId, IoKind.Write, buffer.Length, started);
+
             transferred = buffer.Length;
 
             info = DescribeHandle(handle);
@@ -696,6 +707,17 @@ public sealed class PoolFileSystemEngine(
         catch (UnauthorizedAccessException)
         {
         }
+    }
+
+    /// <summary>Feeds a completed operation to the metrics tracker, if one is attached.</summary>
+    private void Observe(Guid partId, IoKind kind, int bytes, long startedTimestamp)
+    {
+        if (_ioObserver is null || bytes <= 0)
+        {
+            return;
+        }
+
+        _ioObserver.Record(new IoSample(partId, kind, bytes, Stopwatch.GetElapsedTime(startedTimestamp)));
     }
 
     private bool ParentExists(string poolPath)

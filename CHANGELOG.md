@@ -27,6 +27,11 @@ change:
 - WinFsp host (`MergePool.Fs.WinFsp`): WinFsp adapter, mounter, and pass-through of security
   descriptors and alternate data streams.
 - Integration tests running end-to-end scenarios over fake drives.
+- Placement engine: per-drive EWMA write throughput and latency from real IO plus a light idle
+  probe, throttle detection against each drive's own baseline with hysteresis and cooldown, and a
+  live speed factor feeding placement scores.
+- Low-priority pausable rebalancer that evens out drive usage, skips files in use, respects a
+  bandwidth cap and never moves the same file twice.
 
 ### Compatibility
 
