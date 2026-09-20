@@ -1,3 +1,4 @@
+using System.IO;
 using MergePool.Ipc.Client;
 using MergePool.Ipc.Protocol;
 

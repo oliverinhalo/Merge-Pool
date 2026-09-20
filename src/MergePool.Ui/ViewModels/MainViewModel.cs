@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.IO;
 using System.Windows.Threading;
 using MergePool.Ipc.Protocol;
 using MergePool.Ui.Services;

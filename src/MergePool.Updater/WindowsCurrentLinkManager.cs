@@ -42,6 +42,9 @@ public sealed class WindowsCurrentLinkManager(InstallLayout layout) : ICurrentLi
         // old link or the new one — never a missing 'current'.
         var staging = current + ".new";
         RemoveLink(staging);
+
+        // A directory symbolic link, which administrators may create; the installer uses a junction
+        // for the same path. Both resolve identically and both are read back through LinkTarget.
         Directory.CreateSymbolicLink(staging, target);
 
         if (Directory.Exists(current))
