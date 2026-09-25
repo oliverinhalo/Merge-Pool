@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>MergePool.Ipc</RootNamespace>
+    <AssemblyName>MergePool.Ipc</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="MergePool.Ipc.Tests" />
+  </ItemGroup>
+
+</Project>

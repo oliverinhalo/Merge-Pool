@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "true"
+
+jobs:
+  portable:
+    name: Portable core (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - run: dotnet restore MergePool.Portable.slnf
+      - run: dotnet build MergePool.Portable.slnf --no-restore -c Release
+      - run: dotnet test MergePool.Portable.slnf --no-build -c Release --verbosity normal
+
+  windows:
+    name: Full solution (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      # The WinFsp host references winfsp-msil.dll from the WinFsp install directory; WinFsp does
+      # not publish it on NuGet.
+      - name: Install WinFsp
+        run: choco install winfsp --yes --no-progress
+      - run: dotnet restore MergePool.sln
+      - run: dotnet build MergePool.sln --no-restore -c Release
+      - run: dotnet test MergePool.sln --no-build -c Release --verbosity normal
+
+  installer:
+    name: Installer (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Install WinFsp
+        run: choco install winfsp --yes --no-progress
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+      # Publishes the service, UI and updater and compiles MergePool.iss, so a mistake in the
+      # installer script or its Pascal [Code] section fails here instead of on someone's machine.
+      - name: Build the installer
+        shell: pwsh
+        run: .\installer\build.ps1 -Configuration Release
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: MergePool-setup
+          path: installer/Output/*.exe
+          if-no-files-found: error

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>MergePool.Update</RootNamespace>
+    <AssemblyName>MergePool.Update</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MergePool.Ipc\MergePool.Ipc.csproj" />
+  </ItemGroup>
+
+</Project>

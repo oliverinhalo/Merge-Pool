@@ -1,0 +1,123 @@
+# Changelog
+
+All notable changes to MergePool are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+Two compatibility contracts are versioned separately from the app and are called out on every
+change:
+
+- **Data format** — the `.PoolPart-{GUID}` layout on disk. Pool files are plain files in mirrored
+  paths, readable with MergePool uninstalled.
+- **Config schema** — `config.json` `schemaVersion`, migrated forward only, backed up first,
+  unknown fields preserved.
+
+## [0.2.0] - 2026-09-25
+
+Data format: unchanged. Config schema: unchanged — a pool simply gains another drive entry, which a
+0.1.0 build reads without migrating.
+
+### Added
+
+- Drives can be added to a pool that already exists, from the same window: select the pool, tick
+  the drives, click **Add to '<pool>'**. The pool is not unmounted — its drive letter stays live,
+  open files are not interrupted, and the extra space appears within a couple of seconds. Nothing
+  already in the pool moves; new writes simply start landing on the new drive too. Adding a drive
+  never touches what is already on it: the only thing written is its own `.PoolPart-{GUID}` folder,
+  unless adoption is explicitly asked for.
+- Wire protocol 2: `pool.addDrives`, announced as the `poolEdit` capability. `MinimumSupported`
+  stays at 1, so a UI built against protocol 1 is unaffected, and a new UI against an old service
+  feature-detects and hides the button rather than calling a method that is not there.
+
+## [0.1.0] - 2026-09-20
+
+### Added
+
+- Core pool library: pool-part layout, volume-GUID drive identity, union view, write operations,
+  placement scoring and optional adoption of existing drive content.
+- Configuration store with `schemaVersion`, forward migrations, pre-migration backup and
+  unknown-field preservation.
+- Unit tests covering path handling, merged listings, degraded/rejoining drives, placement and
+  config migration.
+- Pool file system engine: open/read/write/rename/delete semantics with NTSTATUS-shaped results,
+  merged directory enumeration, and whole-file relocation when a write outgrows its drive.
+- WinFsp host (`MergePool.Fs.WinFsp`): WinFsp adapter, mounter, and pass-through of security
+  descriptors and alternate data streams.
+- Integration tests running end-to-end scenarios over fake drives.
+- Placement engine: per-drive EWMA write throughput and latency from real IO plus a light idle
+  probe, throttle detection against each drive's own baseline with hysteresis and cooldown, and a
+  live speed factor feeding placement scores.
+- Low-priority pausable rebalancer that evens out drive usage, skips files in use, respects a
+  bandwidth cap and never moves the same file twice.
+- `MergePool.Ipc`: versioned named-pipe protocol with a handshake, capability negotiation,
+  length-prefixed JSON framing and structured errors.
+- `MergePool.Engine`: the pool engine the service hosts — configuration, per-pool runtimes,
+  mounting, drain/resume for upgrades and a health check.
+- `MergePool.Service`: Windows service host wiring the engine to WinFsp and the named pipe, with
+  an ACL that lets the signed-in user's UI connect.
+- `MergePool.Ui`: WPF front end listing fixed and removable drives with letter, label, size and
+  free space, tick-to-pool selection, mount letter picker, and live per-drive pool status
+  including throttling and measured throughput. Reconnects on its own when the service restarts.
+- `MergePool.Update` / `MergePool.Updater`: side-by-side versioned install layout with an atomic
+  `current` swap, and an upgrade sequence of drain, stop, swap, start, health check, with
+  automatic rollback to the previous version when the new one does not come up healthy.
+- Inno Setup installer: requires administrator, checks for WinFsp and installs it when missing,
+  registers the service against `current`, and leaves every pooled file in place on uninstall.
+
+### Fixed
+
+- The WPF window died on launch with "Cannot find non-neutral culture related to 'en-us'."
+  `InvariantGlobalization` was enabled for every project, and WPF needs real culture data to
+  resolve the UI language. Removed, with a test that fails if it is ever set again — CI compiles
+  the UI but never launches it, so nothing else would catch it.
+- The drive list came up empty on a real machine. A volume with no mount point — the EFI system
+  partition and the recovery partition, present on every modern Windows install — makes Windows
+  return just a null terminator, which was read back as the one-character path `"\0"` rather than
+  as "no mount point". `DriveInfo` then threw `ArgumentException`, which was not among the caught
+  types, so one hidden partition aborted the whole enumeration and every drive vanished.
+  The terminator is now read correctly, `ArgumentException` and `NotSupportedException` are caught,
+  and each volume is described in isolation so one unreadable volume cannot empty the list.
+- The UI showed that empty list with no explanation, which reads as "this machine has no drives".
+  A failed drive or pool refresh now shows the reason, and the service's underlying error message
+  is carried through instead of the generic "the service failed to handle the request".
+- An upgrade could stop the MergePool service and never start it again. The installer stops a
+  running service before replacing its files, but starting it back up was gated on the optional
+  "start the service" task checkbox, so the engine was left down and the UI came up reporting that
+  the service could not be reached. An upgrade now always restarts the service it stopped, and
+  waits longer for the stop to release the files.
+- Upgrading swapped the `current` junction by deleting it and then moving the replacement into
+  place. If that move failed, `current` was simply gone, and the service — registered at
+  `{app}\current\MergePool.Service.exe` — could never start again. The new link is now built
+  under a staging name first, falls back to creating the link directly if the rename fails, and
+  the install verifies that `current` really resolves to `MergePool.Service.exe` afterwards.
+- "The MergePool service is not running or cannot be reached" said nothing about what to do about
+  it. It now names the fix, since starting a service needs an elevated shell and `Start-Service`
+  from an ordinary one fails with an opaque "cannot open MergePool service" error.
+
+- The installer failed to compile: a Pascal `{ }` comment in the `[Code]` section contained
+  `{app}`, and the `}` inside it closed the comment early, leaving the rest of the sentence to be
+  parsed as code. All `[Code]` comments are now `//`, which cannot be ended by a brace. CI now
+  compiles the installer on Windows and uploads it, so this is caught before release.
+- Dropped an installer `[Files]` entry that copied the downloaded `winfsp.msi` from `{tmp}` onto
+  itself; the download already lands where `[Run]` needs it.
+- `installer\build.ps1` only looked for Inno Setup in two fixed folders and failed on a perfectly
+  good install elsewhere. It now checks `PATH`, the uninstall registry entry (per-machine and
+  per-user) and the usual folders including `%LOCALAPPDATA%\Programs`, takes an explicit
+  `-InnoSetupPath`, and its error says the binaries are already published so the `.iss` can be
+  compiled by hand.
+
+### Documentation
+
+- `docs/INSTALL.md`: Windows install and first-run guide — prerequisites, what the installer does,
+  creating a pool, where files live, updating, uninstalling and troubleshooting, plus a table of
+  which operating systems can run MergePool at all.
+- `docs/BUILDING.md`: build instructions separated per operating system. Windows builds everything
+  including the installer; Linux and macOS build and test the portable core.
+- README rewritten as a front door that routes to the right guide.
+
+### Compatibility
+
+- Data format: **1** (`.PoolPart-{GUID}` folders, mirrored paths, advisory `poolpart.json`).
+- Config schema: **1**.
+- IPC protocol: **1** (minimum supported **1**). The service accepts every version from the
+  minimum to the current one, so an old UI keeps working against a new service.

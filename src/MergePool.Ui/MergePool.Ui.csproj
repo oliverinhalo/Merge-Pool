@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>MergePool.Ui</RootNamespace>
+    <AssemblyName>MergePool</AssemblyName>
+    <IsWindowsOnlyProject>true</IsWindowsOnlyProject>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>AnyCPU;x64</Platforms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MergePool.Ipc\MergePool.Ipc.csproj" />
+  </ItemGroup>
+
+</Project>

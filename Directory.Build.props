@@ -1,0 +1,35 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- SemVer. Keep in sync with CHANGELOG.md. -->
+    <VersionPrefix>0.2.0</VersionPrefix>
+    <Product>MergePool</Product>
+    <Company>MergePool</Company>
+    <Authors>MergePool contributors</Authors>
+
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+    <!--
+      Do NOT set InvariantGlobalization. WPF needs real culture data: under invariant
+      globalization it cannot resolve the UI language and throws
+      "Cannot find non-neutral culture related to 'en-us'." while the window is being built,
+      which takes the whole UI down before it can show anything.
+    -->
+  </PropertyGroup>
+
+  <!--
+    Windows-only projects opt in by setting IsWindowsOnlyProject=true. They are skipped on
+    non-Windows build hosts so the portable core still builds and tests anywhere.
+  -->
+  <PropertyGroup Condition="'$(IsWindowsOnlyProject)' == 'true' AND '$(OS)' != 'Windows_NT'">
+    <TargetFramework>net8.0</TargetFramework>
+    <ExcludedFromBuild>true</ExcludedFromBuild>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,9 @@
+<Project>
+
+  <!-- Hard stop: a Windows-only project must never be built on a non-Windows host. -->
+  <Target Name="MergePoolGuardWindowsOnly" BeforeTargets="Build"
+          Condition="'$(IsWindowsOnlyProject)' == 'true' AND '$(OS)' != 'Windows_NT'">
+    <Error Text="$(MSBuildProjectName) is a Windows-only project. Build MergePool.Portable.slnf on non-Windows hosts." />
+  </Target>
+
+</Project>

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RootNamespace>MergePool.Updater</RootNamespace>
+    <AssemblyName>MergePool.Updater</AssemblyName>
+    <IsWindowsOnlyProject>true</IsWindowsOnlyProject>
+    <Platforms>AnyCPU;x64</Platforms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MergePool.Ipc\MergePool.Ipc.csproj" />
+    <ProjectReference Include="..\MergePool.Update\MergePool.Update.csproj" />
+  </ItemGroup>
+
+</Project>
