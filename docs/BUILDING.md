@@ -67,6 +67,18 @@ installer\Output\MergePool-0.1.0-setup.exe
 The version comes from `<VersionPrefix>` in `Directory.Build.props`, so the installer and the
 side-by-side install directory always agree. Override it with `-Version 0.2.0` if you need to.
 
+The script looks for Inno Setup on `PATH`, in its uninstall registry entry (per-machine and
+per-user), and in the usual install folders including `%LOCALAPPDATA%\Programs`. If yours lives
+somewhere else, point at it:
+
+```powershell
+.\installer\build.ps1 -InnoSetupPath "C:\Path\To\Inno Setup 6\ISCC.exe"
+```
+
+The publish step runs before Inno Setup, so if only the packaging step fails, the binaries in
+`artifacts\publish` are already built — you can open `installer\MergePool.iss` in the Inno Setup
+IDE and press **Compile** to get the same installer.
+
 ### Run it without installing
 
 Useful while developing, so you do not have to reinstall on every change. Run **elevated** — mounting

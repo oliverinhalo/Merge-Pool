@@ -14,7 +14,13 @@
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <AnalysisLevel>latest</AnalysisLevel>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
-    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!--
+      Do NOT set InvariantGlobalization. WPF needs real culture data: under invariant
+      globalization it cannot resolve the UI language and throws
+      "Cannot find non-neutral culture related to 'en-us'." while the window is being built,
+      which takes the whole UI down before it can show anything.
+    -->
   </PropertyGroup>
 
   <!--

@@ -47,6 +47,18 @@ change:
 - Inno Setup installer: requires administrator, checks for WinFsp and installs it when missing,
   registers the service against `current`, and leaves every pooled file in place on uninstall.
 
+### Fixed
+
+- The WPF window died on launch with "Cannot find non-neutral culture related to 'en-us'."
+  `InvariantGlobalization` was enabled for every project, and WPF needs real culture data to
+  resolve the UI language. Removed, with a test that fails if it is ever set again — CI compiles
+  the UI but never launches it, so nothing else would catch it.
+- `installer\build.ps1` only looked for Inno Setup in two fixed folders and failed on a perfectly
+  good install elsewhere. It now checks `PATH`, the uninstall registry entry (per-machine and
+  per-user) and the usual folders including `%LOCALAPPDATA%\Programs`, takes an explicit
+  `-InnoSetupPath`, and its error says the binaries are already published so the `.iss` can be
+  compiled by hand.
+
 ### Documentation
 
 - `docs/INSTALL.md`: Windows install and first-run guide — prerequisites, what the installer does,
