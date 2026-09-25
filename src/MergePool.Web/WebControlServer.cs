@@ -194,13 +194,11 @@ public sealed class WebControlServer : IDisposable
             _listener = null;
             _shutdown = null;
 
-            if (_state is WebServerState.Listening)
+            // Stopping clears a previous failure too: an interface that has been turned off is off,
+            // not still complaining about a port it is no longer trying to bind.
+            if (!keepError)
             {
                 _state = WebServerState.Stopped;
-            }
-
-            if (!keepError && _state is not WebServerState.Failed)
-            {
                 _error = null;
             }
         }

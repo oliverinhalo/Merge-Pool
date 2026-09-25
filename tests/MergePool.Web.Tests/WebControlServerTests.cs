@@ -289,6 +289,38 @@ public sealed class WebControlServerTests : IDisposable
     }
 
     [Fact]
+    public void Turning_it_off_clears_an_earlier_port_failure()
+    {
+        _fixture.Options.Port = 80;
+        _fixture.Server.Apply();
+        Assert.Equal(WebServerState.Failed, _fixture.Server.Status.State);
+
+        _fixture.Options.Enabled = false;
+        _fixture.Server.Apply();
+
+        var status = _fixture.Server.Status;
+
+        Assert.Equal(WebServerState.Stopped, status.State);
+        Assert.Null(status.Error);
+    }
+
+    [Fact]
+    public void A_failure_gives_way_to_a_working_port()
+    {
+        _fixture.Options.Port = 80;
+        _fixture.Server.Apply();
+        Assert.Equal(WebServerState.Failed, _fixture.Server.Status.State);
+
+        _fixture.Options.Port = _fixture.Options.Port + 9000;
+        _fixture.Server.Apply();
+
+        var status = _fixture.Server.Status;
+
+        Assert.Equal(WebServerState.Listening, status.State);
+        Assert.Null(status.Error);
+    }
+
+    [Fact]
     public async Task Moving_to_another_port_rebinds()
     {
         var first = _fixture.Options.Port;

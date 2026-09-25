@@ -85,7 +85,7 @@ See [docs/UPGRADES.md](docs/UPGRADES.md).
 | `src/MergePool.Ui` | WPF front end | Windows |
 | `src/MergePool.Updater` | Upgrade CLI | Windows |
 | `src/MergePool.Web` | Optional web interface: HTTP server, JSON API, single-page app | any OS |
-| `tests/` | 321 tests, all runnable on any OS | any OS |
+| `tests/` | 323 tests, all runnable on any OS | any OS |
 | `installer/` | Inno Setup script and the publish + package script | Windows |
 
 ## Status
@@ -94,7 +94,7 @@ Version 0.4.0. All six milestones are in — core pool library, WinFsp mount, pl
 engine, service and IPC, WPF UI, installer and updater — plus growing and shrinking a live pool,
 measured pool usage, and updating itself from the release feed.
 
-321 tests pass on Linux and Windows. CI compiles the full Windows solution against a real WinFsp
+323 tests pass on Linux and Windows. CI compiles the full Windows solution against a real WinFsp
 install and builds the installer, so a `[Code]` change that will not compile fails there rather than
 on a user's machine.
 
