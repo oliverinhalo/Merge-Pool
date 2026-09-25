@@ -11,12 +11,21 @@ namespace MergePool.Core.Model;
 /// Creates, discovers and resolves <c>.PoolPart-{GUID}</c> folders. This is the only component that
 /// writes at a volume root, and it only ever creates the part folder itself.
 /// </summary>
-public sealed class PoolPartManager(IVolumeProvider volumeProvider, TimeProvider? timeProvider = null)
+public sealed class PoolPartManager(
+    IVolumeProvider volumeProvider,
+    TimeProvider? timeProvider = null,
+    PartUsageMeter? usageMeter = null)
 {
     private readonly IVolumeProvider _volumeProvider =
         volumeProvider ?? throw new ArgumentNullException(nameof(volumeProvider));
 
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+
+    /// <summary>
+    /// Supplies each part's measured size. Optional: without one, parts report drive figures only
+    /// and the pool's own usage reads as unknown rather than as zero.
+    /// </summary>
+    public PartUsageMeter? UsageMeter { get; } = usageMeter;
 
     /// <summary>
     /// Creates the pool part folder on <paramref name="volume"/> if it is not already there. Nothing
@@ -163,9 +172,13 @@ public sealed class PoolPartManager(IVolumeProvider volumeProvider, TimeProvider
                 continue;
             }
 
+            var usage = UsageMeter?.Get(drive.PartId) ?? PartUsage.Unknown;
+
             parts.Add(ToPart(volume, drive.PartId, root) with
             {
                 SpeedFactor = drive.SpeedFactorOverride ?? 1.0,
+                PoolBytes = usage.IsKnown ? usage.Bytes : null,
+                PoolFileCount = usage.IsKnown ? usage.FileCount : null,
             });
         }
 

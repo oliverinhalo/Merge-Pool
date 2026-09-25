@@ -35,5 +35,22 @@ public sealed record PoolSnapshot
 
     public long FreeBytes => OnlineParts.Sum(static p => p.FreeBytes);
 
+    /// <summary>What the pool itself holds, across every drive that is present.</summary>
+    public long PoolUsedBytes => OnlineParts.Sum(static p => p.PoolBytes ?? 0);
+
+    public int PoolFileCount => OnlineParts.Sum(static p => p.PoolFileCount ?? 0);
+
+    /// <summary>
+    /// What the pool can hold: its own content plus the free space on its drives. Deliberately not
+    /// the drives' total size — space occupied by files outside the pool was never the pool's.
+    /// </summary>
+    public long PoolCapacityBytes => OnlineParts.Sum(static p => p.PoolCapacityBytes);
+
+    /// <summary>True once every present drive has been measured, so the pool figures are real.</summary>
+    public bool IsUsageMeasured => Parts.Count > 0 && OnlineParts.All(static p => p.PoolBytes is not null);
+
+    /// <summary>Everything on the pool's drives that is not in the pool.</summary>
+    public long ForeignBytes => OnlineParts.Sum(static p => p.ForeignBytes ?? 0);
+
     public PoolPart? FindPart(Guid partId) => Parts.FirstOrDefault(p => p.PartId == partId);
 }

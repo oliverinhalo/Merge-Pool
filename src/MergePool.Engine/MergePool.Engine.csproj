@@ -9,6 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="..\MergePool.Core\MergePool.Core.csproj" />
     <ProjectReference Include="..\MergePool.Ipc\MergePool.Ipc.csproj" />
+    <ProjectReference Include="..\MergePool.Update\MergePool.Update.csproj" />
   </ItemGroup>
 
   <ItemGroup>

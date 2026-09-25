@@ -22,6 +22,12 @@ public sealed class MergePoolConfig
     [JsonPropertyName("service")]
     public ServiceOptions Service { get; set; } = new();
 
+    [JsonPropertyName("updates")]
+    public UpdateOptions Updates { get; set; } = new();
+
+    [JsonPropertyName("ui")]
+    public UiOptions Ui { get; set; } = new();
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement> AdditionalData { get; set; } = [];
 }
@@ -188,6 +194,63 @@ public sealed class RebalanceOptions
 
     [JsonPropertyName("pauseWhileBusy")]
     public bool PauseWhileBusy { get; set; } = true;
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement> AdditionalData { get; set; } = [];
+}
+
+/// <summary>
+/// How MergePool keeps itself up to date. An update only ever adds a new version directory and
+/// repoints which one is active; pool data and this configuration are never touched by one.
+/// </summary>
+public sealed class UpdateOptions
+{
+    /// <summary>Check the release feed on a timer.</summary>
+    [JsonPropertyName("automaticChecks")]
+    public bool AutomaticChecks { get; set; } = true;
+
+    /// <summary>Install a newer version as soon as it is found, without being asked.</summary>
+    [JsonPropertyName("automaticInstall")]
+    public bool AutomaticInstall { get; set; } = true;
+
+    [JsonPropertyName("checkIntervalHours")]
+    public double CheckIntervalHours { get; set; } = 6;
+
+    /// <summary>Accept pre-releases. Off: a working machine should get stable builds.</summary>
+    [JsonPropertyName("includePrereleases")]
+    public bool IncludePrereleases { get; set; }
+
+    [JsonPropertyName("repositoryOwner")]
+    public string RepositoryOwner { get; set; } = "oliverinhalo";
+
+    [JsonPropertyName("repositoryName")]
+    public string RepositoryName { get; set; } = "Merge-Pool";
+
+    /// <summary>Recorded so a restart does not immediately re-check.</summary>
+    [JsonPropertyName("lastCheckedUtc")]
+    public DateTimeOffset? LastCheckedUtc { get; set; }
+
+    /// <summary>Set after a version fails to install, so it is not retried in a loop.</summary>
+    [JsonPropertyName("skipVersion")]
+    public string? SkipVersion { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement> AdditionalData { get; set; } = [];
+}
+
+/// <summary>Preferences that belong to the window rather than the engine.</summary>
+public sealed class UiOptions
+{
+    /// <summary>Close the window to the notification area instead of exiting.</summary>
+    [JsonPropertyName("closeToTray")]
+    public bool CloseToTray { get; set; } = true;
+
+    /// <summary>Start hidden in the notification area when launched at sign-in.</summary>
+    [JsonPropertyName("startMinimised")]
+    public bool StartMinimised { get; set; } = true;
+
+    [JsonPropertyName("theme")]
+    public string Theme { get; set; } = "System";
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement> AdditionalData { get; set; } = [];

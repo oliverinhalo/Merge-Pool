@@ -6,9 +6,42 @@ using MergePool.Core.FileSystem;
 using MergePool.Core.Model;
 using MergePool.Core.Placement;
 using MergePool.Core.Rebalance;
+using MergePool.Core.Paths;
 using MergePool.Core.Volumes;
 
 namespace MergePool.Engine;
+
+/// <summary>What to do with the pool's content when a drive leaves.</summary>
+public enum DriveRemoval
+{
+    /// <summary>
+    /// Forget the drive. Its pool part folder and everything in it stay on the drive as ordinary
+    /// files; they just stop being part of the pool. Nothing is deleted or moved.
+    /// </summary>
+    Detach = 0,
+
+    /// <summary>
+    /// Move the pool's content off the drive onto the pool's other drives first, then forget it.
+    /// The drive only leaves once it is actually empty.
+    /// </summary>
+    Evacuate = 1,
+}
+
+public sealed record DriveRemovalResult
+{
+    /// <summary>False when the drive stayed in the pool because its content could not all be moved.</summary>
+    public required bool Removed { get; init; }
+
+    public required DriveRemoval Mode { get; init; }
+
+    /// <summary>Set for <see cref="DriveRemoval.Evacuate"/>: what actually moved.</summary>
+    public EvacuationResult? Evacuation { get; init; }
+
+    /// <summary>True when the emptied pool part folder was cleaned off the drive.</summary>
+    public required bool PartFolderRemoved { get; init; }
+
+    public required string Message { get; init; }
+}
 
 public sealed record PoolEngineOptions
 {
@@ -21,6 +54,9 @@ public sealed record PoolEngineOptions
     public IFileSecurityCopier? SecurityCopier { get; init; }
 
     public TimeProvider? TimeProvider { get; init; }
+
+    /// <summary>How long a measured part size is trusted before it is walked again.</summary>
+    public TimeSpan? UsageMeasurementTtl { get; init; }
 }
 
 /// <summary>
@@ -50,7 +86,8 @@ public sealed class PoolEngine : IDisposable
         _volumes = options.VolumeProvider;
         _mounts = options.MountService;
         _timeProvider = options.TimeProvider ?? TimeProvider.System;
-        _partManager = new PoolPartManager(_volumes, _timeProvider);
+        UsageMeter = new PartUsageMeter(options.UsageMeasurementTtl, _timeProvider);
+        _partManager = new PoolPartManager(_volumes, _timeProvider, UsageMeter);
         _relocator = new FileRelocator(options.SecurityCopier);
 
         var load = _configStore.Load();
@@ -68,6 +105,9 @@ public sealed class PoolEngine : IDisposable
     }
 
     public DriveMetricsTracker Metrics { get; }
+
+    /// <summary>What the pool is holding on each drive, as opposed to what the drive is holding.</summary>
+    public PartUsageMeter UsageMeter { get; }
 
     public IdleProbe IdleProbe { get; }
 
@@ -288,6 +328,161 @@ public sealed class PoolEngine : IDisposable
     }
 
     /// <summary>
+    /// Plans what would be moved if a drive were taken out of a pool with its content kept, without
+    /// moving anything. Lets the UI say up front whether the remaining drives have room.
+    /// </summary>
+    public EvacuationPlan PlanDriveRemoval(Guid poolId, VolumeId volumeId)
+    {
+        var (runtime, drive) = RequireDrive(poolId, volumeId);
+        _ = drive;
+
+        return new PartEvacuator(_relocator).Plan(
+            runtime.FreshSnapshot,
+            drive.PartId,
+            _config.Placement.WriteHeadroomBytes);
+    }
+
+    /// <summary>
+    /// Takes a drive out of a pool.
+    /// </summary>
+    /// <remarks>
+    /// <para><see cref="DriveRemoval.Detach"/> only forgets the drive. Its
+    /// <c>.PoolPart-{GUID}</c> folder and every file in it stay exactly where they are, as ordinary
+    /// files — they simply stop appearing in the pool. Nothing is deleted.</para>
+    /// <para><see cref="DriveRemoval.Evacuate"/> first moves the pool's content off that drive onto
+    /// the pool's other drives, whole file by whole file, and only detaches once the drive is
+    /// actually empty. If anything could not be moved — no room, or a file another process has open
+    /// — the drive stays in the pool and the caller is told why, because a half-emptied drive that
+    /// has already left the pool is how data gets lost.</para>
+    /// </remarks>
+    public DriveRemovalResult RemoveDrive(
+        Guid poolId,
+        VolumeId volumeId,
+        DriveRemoval mode = DriveRemoval.Detach,
+        IProgress<EvacuationProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var (runtime, drive) = RequireDrive(poolId, volumeId);
+
+        if (runtime.Definition.Drives.Count <= 1 && mode is DriveRemoval.Evacuate)
+        {
+            throw new InvalidOperationException(
+                "This is the pool's only drive, so there is nowhere to move its files to. "
+                + "Remove the pool instead — that leaves every file on the drive.");
+        }
+
+        EvacuationResult? evacuation = null;
+        var partRemoved = false;
+
+        if (mode is DriveRemoval.Evacuate)
+        {
+            var evacuator = new PartEvacuator(_relocator);
+            var plan = evacuator.Plan(
+                runtime.FreshSnapshot, drive.PartId, _config.Placement.WriteHeadroomBytes);
+
+            if (!plan.Fits)
+            {
+                throw new InvalidOperationException(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"The pool's other drives have {plan.DestinationFreeBytes:N0} bytes free, which is not "
+                    + $"enough for the {plan.WithoutRoom.Count} file(s) that would have to move. "
+                    + $"Free up space, or remove the drive without moving its files."));
+            }
+
+            evacuation = evacuator.Run(runtime.Topology, plan, progress, cancellationToken);
+
+            if (!evacuation.IsComplete)
+            {
+                // The drive stays in the pool. Its files are either still on it or safely on another
+                // drive; either way the pool can still see all of them.
+                return new DriveRemovalResult
+                {
+                    Removed = false,
+                    Mode = mode,
+                    Evacuation = evacuation,
+                    PartFolderRemoved = false,
+                    Message = DescribeIncompleteEvacuation(evacuation),
+                };
+            }
+        }
+
+        lock (_gate)
+        {
+            runtime.Definition.Drives.RemoveAll(d =>
+                VolumeId.TryParse(d.VolumeId, out var id) && id == volumeId);
+            _configStore.Save(_config);
+        }
+
+        UsageMeter.Invalidate(drive.PartId);
+        runtime.Invalidate();
+
+        if (mode is DriveRemoval.Evacuate)
+        {
+            // Only ever the empty shell: TryRemoveEmptyPart stops at the first thing that is not empty.
+            var root = ResolvePartRoot(volumeId, drive.PartId);
+            partRemoved = root is not null && PartEvacuator.TryRemoveEmptyPart(root);
+        }
+
+        return new DriveRemovalResult
+        {
+            Removed = true,
+            Mode = mode,
+            Evacuation = evacuation,
+            PartFolderRemoved = partRemoved,
+            Message = mode is DriveRemoval.Evacuate
+                ? string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Moved {evacuation!.MovedCount} file(s) onto the remaining drives and removed the drive from the pool.")
+                : "The drive left the pool. Every file it held is still on it, in its pool part folder.",
+        };
+    }
+
+    private (PoolRuntime Runtime, PoolDriveDefinition Drive) RequireDrive(Guid poolId, VolumeId volumeId)
+    {
+        var runtime = FindPool(poolId) ?? throw new KeyNotFoundException($"No pool {poolId:D}.");
+
+        var drive = runtime.Definition.Drives.FirstOrDefault(d =>
+                        VolumeId.TryParse(d.VolumeId, out var id) && id == volumeId)
+                    ?? throw new KeyNotFoundException($"Drive {volumeId} is not in pool '{runtime.Definition.Name}'.");
+
+        return (runtime, drive);
+    }
+
+    private string? ResolvePartRoot(VolumeId volumeId, Guid partId)
+    {
+        var volume = _volumes.TryGetVolume(volumeId);
+        return volume?.RootPath is null ? null : PoolPartLayout.RootPathFor(volume.RootPath, partId);
+    }
+
+    private static string DescribeIncompleteEvacuation(EvacuationResult evacuation)
+    {
+        if (evacuation.Cancelled)
+        {
+            return string.Create(
+                CultureInfo.InvariantCulture,
+                $"Stopped after moving {evacuation.MovedCount} file(s). The drive is still in the pool and nothing was lost.");
+        }
+
+        var parts = new List<string>();
+        if (evacuation.SkippedInUse.Count > 0)
+        {
+            parts.Add($"{evacuation.SkippedInUse.Count} file(s) are open in another program");
+        }
+
+        if (evacuation.Failed.Count > 0)
+        {
+            parts.Add($"{evacuation.Failed.Count} file(s) could not be moved");
+        }
+
+        const string advice = "The drive is still in the pool: close the files and try again, or "
+            + "remove the drive without moving its files.";
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"Moved {evacuation.MovedCount} file(s), but {string.Join(" and ", parts)}. {advice}");
+    }
+
+    /// <summary>
     /// Removes a pool from the configuration. Pool parts are left on the drives unless explicitly
     /// asked for, because removing a pool must never destroy data.
     /// </summary>
@@ -437,6 +632,12 @@ public sealed class PoolEngine : IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             runtime.Invalidate();
+
+            // Measuring re-walks a part only once its cached figure has expired, so this is nearly
+            // free on most ticks.
+            UsageMeter.Refresh(runtime.Snapshot, cancellationToken);
+            runtime.Invalidate();
+
             IdleProbe.ProbeIdleDrives(runtime.Snapshot, cancellationToken);
         }
     }
@@ -456,6 +657,18 @@ public sealed class PoolEngine : IDisposable
         lock (_gate)
         {
             update(_config.Placement);
+            _configStore.Save(_config);
+        }
+    }
+
+    /// <summary>Applies update preferences and persists them, preserving unknown config fields.</summary>
+    public void UpdateUpdateOptions(Action<UpdateOptions> update)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+
+        lock (_gate)
+        {
+            update(_config.Updates);
             _configStore.Save(_config);
         }
     }

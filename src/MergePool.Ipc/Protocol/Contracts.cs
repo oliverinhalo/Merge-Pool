@@ -111,6 +111,18 @@ public sealed class PoolPartDto : IpcContract
     [JsonPropertyName("freeBytes")]
     public long FreeBytes { get; set; }
 
+    /// <summary>Bytes the pool holds on this drive, or null until measured. Protocol 3.</summary>
+    [JsonPropertyName("poolBytes")]
+    public long? PoolBytes { get; set; }
+
+    /// <summary>Files the pool holds on this drive, or null until measured. Protocol 3.</summary>
+    [JsonPropertyName("poolFileCount")]
+    public int? PoolFileCount { get; set; }
+
+    /// <summary>What this drive contributes to the pool: pooled bytes plus free space. Protocol 3.</summary>
+    [JsonPropertyName("poolCapacityBytes")]
+    public long PoolCapacityBytes { get; set; }
+
     [JsonPropertyName("isThrottled")]
     public bool IsThrottled { get; set; }
 
@@ -153,6 +165,25 @@ public sealed class PoolDto : IpcContract
 
     [JsonPropertyName("freeBytes")]
     public long FreeBytes { get; set; }
+
+    /// <summary>What the pool itself holds, across every drive present. Protocol 3.</summary>
+    [JsonPropertyName("poolUsedBytes")]
+    public long PoolUsedBytes { get; set; }
+
+    /// <summary>Pooled bytes plus free space: what the pool can hold. Protocol 3.</summary>
+    [JsonPropertyName("poolCapacityBytes")]
+    public long PoolCapacityBytes { get; set; }
+
+    [JsonPropertyName("poolFileCount")]
+    public int PoolFileCount { get; set; }
+
+    /// <summary>Everything on the pool's drives that is not in the pool. Protocol 3.</summary>
+    [JsonPropertyName("foreignBytes")]
+    public long ForeignBytes { get; set; }
+
+    /// <summary>False until every present drive has been walked, so the figures above are real.</summary>
+    [JsonPropertyName("isUsageMeasured")]
+    public bool IsUsageMeasured { get; set; }
 
     [JsonPropertyName("parts")]
     public List<PoolPartDto> Parts { get; set; } = [];
@@ -221,6 +252,136 @@ public sealed class RemovePoolRequest : IpcContract
     /// </summary>
     [JsonPropertyName("deletePoolParts")]
     public bool DeletePoolParts { get; set; }
+}
+
+/// <summary>Takes a drive out of a pool. Protocol 3, capability <c>driveRemoval</c>.</summary>
+public sealed class RemoveDriveRequest : IpcContract
+{
+    [JsonPropertyName("poolId")]
+    public Guid PoolId { get; set; }
+
+    [JsonPropertyName("volumeId")]
+    public string VolumeId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// <c>false</c> (the default) leaves the drive's files on it, in their pool part folder.
+    /// <c>true</c> moves them onto the pool's other drives first, and only then removes the drive.
+    /// </summary>
+    [JsonPropertyName("moveFilesOff")]
+    public bool MoveFilesOff { get; set; }
+}
+
+public sealed class DriveRemovalPlanResult : IpcContract
+{
+    [JsonPropertyName("fileCount")]
+    public int FileCount { get; set; }
+
+    [JsonPropertyName("totalBytes")]
+    public long TotalBytes { get; set; }
+
+    /// <summary>Free space on the drives that would receive the files.</summary>
+    [JsonPropertyName("destinationFreeBytes")]
+    public long DestinationFreeBytes { get; set; }
+
+    /// <summary>True when everything on the drive has somewhere to go.</summary>
+    [JsonPropertyName("fits")]
+    public bool Fits { get; set; }
+
+    [JsonPropertyName("withoutRoomCount")]
+    public int WithoutRoomCount { get; set; }
+}
+
+public sealed class DriveRemovalResultDto : IpcContract
+{
+    /// <summary>False when the drive stayed in the pool because its files could not all be moved.</summary>
+    [JsonPropertyName("removed")]
+    public bool Removed { get; set; }
+
+    [JsonPropertyName("movedFilesOff")]
+    public bool MovedFilesOff { get; set; }
+
+    [JsonPropertyName("movedCount")]
+    public int MovedCount { get; set; }
+
+    [JsonPropertyName("movedBytes")]
+    public long MovedBytes { get; set; }
+
+    [JsonPropertyName("skippedInUse")]
+    public List<string> SkippedInUse { get; set; } = [];
+
+    [JsonPropertyName("failed")]
+    public List<string> Failed { get; set; } = [];
+
+    [JsonPropertyName("partFolderRemoved")]
+    public bool PartFolderRemoved { get; set; }
+
+    [JsonPropertyName("message")]
+    public string Message { get; set; } = string.Empty;
+
+    [JsonPropertyName("pool")]
+    public PoolDto? Pool { get; set; }
+}
+
+/// <summary>Where the update machinery stands. Protocol 3, capability <c>autoUpdate</c>.</summary>
+public sealed class UpdateStatusResult : IpcContract
+{
+    [JsonPropertyName("installedVersion")]
+    public string InstalledVersion { get; set; } = "0.0.0";
+
+    /// <summary>Newest version the release feed offers, or null when nothing newer is known.</summary>
+    [JsonPropertyName("availableVersion")]
+    public string? AvailableVersion { get; set; }
+
+    [JsonPropertyName("updateAvailable")]
+    public bool UpdateAvailable { get; set; }
+
+    [JsonPropertyName("releaseNotes")]
+    public string? ReleaseNotes { get; set; }
+
+    [JsonPropertyName("releaseUrl")]
+    public string? ReleaseUrl { get; set; }
+
+    [JsonPropertyName("downloadBytes")]
+    public long DownloadBytes { get; set; }
+
+    /// <summary>One of Idle, Checking, Downloading, Staged, Applying, Failed.</summary>
+    [JsonPropertyName("stage")]
+    public string Stage { get; set; } = "Idle";
+
+    [JsonPropertyName("progress")]
+    public double Progress { get; set; }
+
+    [JsonPropertyName("lastCheckedUtc")]
+    public DateTimeOffset? LastCheckedUtc { get; set; }
+
+    [JsonPropertyName("lastError")]
+    public string? LastError { get; set; }
+
+    [JsonPropertyName("automaticChecks")]
+    public bool AutomaticChecks { get; set; }
+
+    [JsonPropertyName("automaticInstall")]
+    public bool AutomaticInstall { get; set; }
+
+    [JsonPropertyName("checkIntervalHours")]
+    public double CheckIntervalHours { get; set; }
+
+    /// <summary>Versions on disk. An upgrade only repoints which one is active.</summary>
+    [JsonPropertyName("installedVersions")]
+    public List<string> InstalledVersions { get; set; } = [];
+}
+
+/// <summary>Update preferences the UI can change. Absent fields are left as they are.</summary>
+public sealed class UpdateSettingsDto : IpcContract
+{
+    [JsonPropertyName("automaticChecks")]
+    public bool? AutomaticChecks { get; set; }
+
+    [JsonPropertyName("automaticInstall")]
+    public bool? AutomaticInstall { get; set; }
+
+    [JsonPropertyName("checkIntervalHours")]
+    public double? CheckIntervalHours { get; set; }
 }
 
 public sealed class ServiceStatusResult : IpcContract

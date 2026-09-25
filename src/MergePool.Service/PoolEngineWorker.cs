@@ -15,6 +15,7 @@ namespace MergePool.Service;
 [SupportedOSPlatform("windows")]
 public sealed class PoolEngineWorker(
     PoolEngine engine,
+    UpdateHost updates,
     ILogger<PoolEngineWorker> logger) : BackgroundService
 {
     private static readonly TimeSpan TickInterval = TimeSpan.FromSeconds(15);
@@ -29,7 +30,7 @@ public sealed class PoolEngineWorker(
                 "Configuration was migrated to the current schema. Backup: {Backup}", engine.ConfigBackupPath);
         }
 
-        var router = new IpcRouter().Register(new EngineIpcHandler(engine));
+        var router = new IpcRouter().Register(new EngineIpcHandler(engine, updates.Service));
 
         _server = new IpcServer(
             new IpcServerOptions
@@ -70,6 +71,7 @@ public sealed class PoolEngineWorker(
             {
                 engine.Tick(stoppingToken);
                 RunRebalancePass(stoppingToken);
+                await RunUpdateCheckAsync(stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -79,6 +81,49 @@ public sealed class PoolEngineWorker(
             {
                 logger.LogWarning(exception, "Background upkeep hit an IO error; continuing.");
             }
+        }
+    }
+
+    /// <summary>
+    /// Keeping itself current. The updater decides whether it is time, so this is nearly free on
+    /// most ticks, and it is skipped entirely while draining: an upgrade is already under way then.
+    /// </summary>
+    private async Task RunUpdateCheckAsync(CancellationToken stoppingToken)
+    {
+        if (updates.Service is not { } updater || engine.IsDraining)
+        {
+            return;
+        }
+
+        var before = updater.State.Stage;
+
+        await updater.TickAsync(
+            engine.Config.Updates,
+            options => engine.UpdateUpdateOptions(existing =>
+            {
+                existing.LastCheckedUtc = options.LastCheckedUtc;
+                existing.SkipVersion = options.SkipVersion;
+            }),
+            stoppingToken).ConfigureAwait(false);
+
+        var state = updater.State;
+        if (state.Stage == before)
+        {
+            return;
+        }
+
+        if (state.UpdateAvailable)
+        {
+            logger.LogInformation(
+                "Update available: {Version} (installed {Installed}). Stage: {Stage}.",
+                state.Available!.Version,
+                state.InstalledVersion,
+                state.Stage);
+        }
+
+        if (state.LastError is { } error)
+        {
+            logger.LogWarning("Update check: {Error}", error);
         }
     }
 

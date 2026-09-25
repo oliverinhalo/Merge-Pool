@@ -13,9 +13,15 @@ namespace MergePool.Engine.Ipc;
 /// Exposes the engine over the named pipe. Every method is additive: once a name is answered here
 /// it keeps being answered, so an old UI is never left calling something that vanished.
 /// </summary>
-public sealed class EngineIpcHandler(PoolEngine engine) : IIpcMethodHandler
+public sealed class EngineIpcHandler(PoolEngine engine, AutoUpdateService? updates = null) : IIpcMethodHandler
 {
     private readonly PoolEngine _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+
+    /// <summary>
+    /// Absent in builds with nowhere to install to (a dev run, or an install whose layout cannot be
+    /// found). The update methods then report that updating is unavailable instead of failing.
+    /// </summary>
+    private readonly AutoUpdateService? _updates = updates;
 
     public IReadOnlyList<string> Methods { get; } =
     [
@@ -26,6 +32,8 @@ public sealed class EngineIpcHandler(PoolEngine engine) : IIpcMethodHandler
         IpcMethods.PoolCreate,
         IpcMethods.PoolRemove,
         IpcMethods.PoolAddDrives,
+        IpcMethods.PoolRemoveDrive,
+        IpcMethods.PoolPlanDriveRemoval,
         IpcMethods.PoolMount,
         IpcMethods.PoolUnmount,
         IpcMethods.MetricsGet,
@@ -40,6 +48,10 @@ public sealed class EngineIpcHandler(PoolEngine engine) : IIpcMethodHandler
         IpcMethods.AdoptionRun,
         IpcMethods.UpgradeDrain,
         IpcMethods.UpgradeResume,
+        IpcMethods.UpdateStatus,
+        IpcMethods.UpdateCheck,
+        IpcMethods.UpdateApply,
+        IpcMethods.UpdateSetOptions,
         IpcMethods.HealthCheck,
     ];
 
@@ -47,7 +59,7 @@ public sealed class EngineIpcHandler(PoolEngine engine) : IIpcMethodHandler
     private Task<Core.Rebalance.RebalanceResult>? _rebalanceTask;
     private Guid _rebalancePoolId;
 
-    public Task<IpcResponse> HandleAsync(IpcCall call, CancellationToken cancellationToken)
+    public async Task<IpcResponse> HandleAsync(IpcCall call, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(call);
 
@@ -55,7 +67,16 @@ public sealed class EngineIpcHandler(PoolEngine engine) : IIpcMethodHandler
 
         try
         {
-            return Task.FromResult(call.Request.Method switch
+            switch (call.Request.Method)
+            {
+                case IpcMethods.UpdateCheck:
+                    return await CheckForUpdateAsync(call, cancellationToken).ConfigureAwait(false);
+
+                case IpcMethods.UpdateApply:
+                    return await ApplyUpdateAsync(call, cancellationToken).ConfigureAwait(false);
+            }
+
+            return call.Request.Method switch
             {
                 IpcMethods.ServiceStatus => Ok(id, ServiceStatus()),
                 IpcMethods.DrivesList => Ok(id, ListDrives()),
@@ -64,6 +85,8 @@ public sealed class EngineIpcHandler(PoolEngine engine) : IIpcMethodHandler
                 IpcMethods.PoolCreate => CreatePool(call),
                 IpcMethods.PoolRemove => RemovePool(call),
                 IpcMethods.PoolAddDrives => AddDrives(call),
+                IpcMethods.PoolRemoveDrive => RemoveDrive(call),
+                IpcMethods.PoolPlanDriveRemoval => PlanDriveRemoval(call),
                 IpcMethods.PoolMount => MountPool(call),
                 IpcMethods.PoolUnmount => UnmountPool(call),
                 IpcMethods.MetricsGet => Ok(id, MetricsFor()),
@@ -78,29 +101,31 @@ public sealed class EngineIpcHandler(PoolEngine engine) : IIpcMethodHandler
                 IpcMethods.AdoptionRun => RunAdoption(call),
                 IpcMethods.UpgradeDrain => Drain(call),
                 IpcMethods.UpgradeResume => Resume(call),
+                IpcMethods.UpdateStatus => Ok(id, UpdateStatus()),
+                IpcMethods.UpdateSetOptions => SetUpdateOptions(call),
                 IpcMethods.HealthCheck => Ok(id, HealthCheck()),
                 _ => IpcResponse.Failure(id, IpcErrorCodes.MethodNotSupported, $"'{call.Request.Method}' is unknown."),
-            });
+            };
         }
         catch (KeyNotFoundException exception)
         {
-            return Task.FromResult(IpcResponse.Failure(id, IpcErrorCodes.NotFound, exception.Message));
+            return IpcResponse.Failure(id, IpcErrorCodes.NotFound, exception.Message);
         }
         catch (UnauthorizedAccessException exception)
         {
-            return Task.FromResult(IpcResponse.Failure(id, IpcErrorCodes.AccessDenied, exception.Message));
+            return IpcResponse.Failure(id, IpcErrorCodes.AccessDenied, exception.Message);
         }
         catch (InvalidOperationException exception)
         {
-            return Task.FromResult(IpcResponse.Failure(id, IpcErrorCodes.Conflict, exception.Message));
+            return IpcResponse.Failure(id, IpcErrorCodes.Conflict, exception.Message);
         }
         catch (ArgumentException exception)
         {
-            return Task.FromResult(IpcResponse.Failure(id, IpcErrorCodes.InvalidRequest, exception.Message));
+            return IpcResponse.Failure(id, IpcErrorCodes.InvalidRequest, exception.Message);
         }
         catch (IOException exception)
         {
-            return Task.FromResult(IpcResponse.Failure(id, IpcErrorCodes.Unavailable, exception.Message));
+            return IpcResponse.Failure(id, IpcErrorCodes.Unavailable, exception.Message);
         }
     }
 
@@ -182,6 +207,11 @@ public sealed class EngineIpcHandler(PoolEngine engine) : IIpcMethodHandler
             Health = snapshot.Health.ToString(),
             TotalBytes = snapshot.TotalBytes,
             FreeBytes = snapshot.FreeBytes,
+            PoolUsedBytes = snapshot.PoolUsedBytes,
+            PoolCapacityBytes = snapshot.PoolCapacityBytes,
+            PoolFileCount = snapshot.PoolFileCount,
+            ForeignBytes = snapshot.ForeignBytes,
+            IsUsageMeasured = snapshot.IsUsageMeasured,
         };
 
         foreach (var part in snapshot.Parts)
@@ -201,6 +231,9 @@ public sealed class EngineIpcHandler(PoolEngine engine) : IIpcMethodHandler
         State = part.State.ToString(),
         TotalBytes = part.TotalBytes,
         FreeBytes = part.FreeBytes,
+        PoolBytes = part.PoolBytes,
+        PoolFileCount = part.PoolFileCount,
+        PoolCapacityBytes = part.PoolCapacityBytes,
         IsThrottled = metrics.IsThrottled,
         ThrottleReason = metrics.ThrottleReason.ToString(),
         SpeedFactor = metrics.SpeedFactor,
@@ -278,6 +311,138 @@ public sealed class EngineIpcHandler(PoolEngine engine) : IIpcMethodHandler
         var request = call.PayloadAs<RemovePoolRequest>();
         _engine.RemovePool(request.PoolId, request.DeletePoolParts);
         return Ok(call.Request.Id, ListPools());
+    }
+
+    private IpcResponse PlanDriveRemoval(IpcCall call)
+    {
+        var request = call.PayloadAs<RemoveDriveRequest>();
+
+        if (!VolumeId.TryParse(request.VolumeId, out var volumeId))
+        {
+            return IpcResponse.Failure(
+                call.Request.Id, IpcErrorCodes.InvalidRequest, $"'{request.VolumeId}' is not a volume identifier.");
+        }
+
+        var plan = _engine.PlanDriveRemoval(request.PoolId, volumeId);
+
+        return Ok(call.Request.Id, new DriveRemovalPlanResult
+        {
+            FileCount = plan.Items.Count + plan.WithoutRoom.Count,
+            TotalBytes = plan.TotalBytes,
+            DestinationFreeBytes = plan.DestinationFreeBytes,
+            Fits = plan.Fits,
+            WithoutRoomCount = plan.WithoutRoom.Count,
+        });
+    }
+
+    private IpcResponse RemoveDrive(IpcCall call)
+    {
+        var request = call.PayloadAs<RemoveDriveRequest>();
+
+        if (!VolumeId.TryParse(request.VolumeId, out var volumeId))
+        {
+            return IpcResponse.Failure(
+                call.Request.Id, IpcErrorCodes.InvalidRequest, $"'{request.VolumeId}' is not a volume identifier.");
+        }
+
+        var result = _engine.RemoveDrive(
+            request.PoolId,
+            volumeId,
+            request.MoveFilesOff ? Engine.DriveRemoval.Evacuate : Engine.DriveRemoval.Detach);
+
+        var runtime = _engine.FindPool(request.PoolId);
+
+        return Ok(call.Request.Id, new DriveRemovalResultDto
+        {
+            Removed = result.Removed,
+            MovedFilesOff = result.Mode is Engine.DriveRemoval.Evacuate,
+            MovedCount = result.Evacuation?.MovedCount ?? 0,
+            MovedBytes = result.Evacuation?.MovedBytes ?? 0,
+            SkippedInUse = [.. result.Evacuation?.SkippedInUse ?? []],
+            Failed = [.. result.Evacuation?.Failed ?? []],
+            PartFolderRemoved = result.PartFolderRemoved,
+            Message = result.Message,
+            Pool = runtime is null ? null : Describe(runtime),
+        });
+    }
+
+    private UpdateStatusResult UpdateStatus()
+    {
+        var options = _engine.Config.Updates;
+
+        if (_updates is null)
+        {
+            return new UpdateStatusResult
+            {
+                InstalledVersion = _engine.Version,
+                Stage = UpdateStage.Unavailable.ToString(),
+                LastError = "This MergePool is not running from a managed install, so it cannot update itself.",
+                AutomaticChecks = options.AutomaticChecks,
+                AutomaticInstall = options.AutomaticInstall,
+                CheckIntervalHours = options.CheckIntervalHours,
+            };
+        }
+
+        var state = _updates.State;
+
+        return new UpdateStatusResult
+        {
+            InstalledVersion = state.InstalledVersion,
+            AvailableVersion = state.Available?.Version,
+            UpdateAvailable = state.UpdateAvailable,
+            ReleaseNotes = state.Available?.Notes,
+            ReleaseUrl = state.Available?.ReleaseUrl?.ToString(),
+            DownloadBytes = state.Available?.PackageBytes ?? 0,
+            Stage = state.Stage.ToString(),
+            Progress = state.Progress,
+            LastCheckedUtc = state.LastCheckedUtc ?? options.LastCheckedUtc,
+            LastError = state.LastError,
+            AutomaticChecks = options.AutomaticChecks,
+            AutomaticInstall = options.AutomaticInstall,
+            CheckIntervalHours = options.CheckIntervalHours,
+            InstalledVersions = [.. state.InstalledVersions],
+        };
+    }
+
+    private async Task<IpcResponse> CheckForUpdateAsync(IpcCall call, CancellationToken cancellationToken)
+    {
+        if (_updates is null)
+        {
+            return Ok(call.Request.Id, UpdateStatus());
+        }
+
+        await _updates.CheckAsync(_engine.Config.Updates, cancellationToken).ConfigureAwait(false);
+        _engine.UpdateUpdateOptions(options => options.LastCheckedUtc = DateTimeOffset.UtcNow);
+
+        return Ok(call.Request.Id, UpdateStatus());
+    }
+
+    private async Task<IpcResponse> ApplyUpdateAsync(IpcCall call, CancellationToken cancellationToken)
+    {
+        if (_updates is null)
+        {
+            return IpcResponse.Failure(
+                call.Request.Id,
+                IpcErrorCodes.Unavailable,
+                "This MergePool is not running from a managed install, so it cannot update itself.");
+        }
+
+        await _updates.ApplyAsync(cancellationToken).ConfigureAwait(false);
+        return Ok(call.Request.Id, UpdateStatus());
+    }
+
+    private IpcResponse SetUpdateOptions(IpcCall call)
+    {
+        var request = call.PayloadAs<UpdateSettingsDto>();
+
+        _engine.UpdateUpdateOptions(options =>
+        {
+            options.AutomaticChecks = request.AutomaticChecks ?? options.AutomaticChecks;
+            options.AutomaticInstall = request.AutomaticInstall ?? options.AutomaticInstall;
+            options.CheckIntervalHours = request.CheckIntervalHours ?? options.CheckIntervalHours;
+        });
+
+        return Ok(call.Request.Id, UpdateStatus());
     }
 
     private IpcResponse MountPool(IpcCall call)

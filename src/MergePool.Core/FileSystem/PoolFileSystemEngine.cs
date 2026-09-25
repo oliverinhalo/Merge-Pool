@@ -35,9 +35,13 @@ public sealed class PoolFileSystemEngine(
     public PoolVolumeInfo GetVolumeInfo()
     {
         var snapshot = _topology.Current;
+
+        // Explorer is told the pool's own size, not the drives' size. The difference is whatever is
+        // on those drives outside the pool, which the pool cannot offer and never could. Until the
+        // parts have been measured there is nothing better than the drive totals to report.
         return new PoolVolumeInfo
         {
-            TotalBytes = snapshot.TotalBytes,
+            TotalBytes = snapshot.IsUsageMeasured ? snapshot.PoolCapacityBytes : snapshot.TotalBytes,
             FreeBytes = snapshot.FreeBytes,
             Label = string.IsNullOrEmpty(snapshot.Name) ? "MergePool" : snapshot.Name,
         };

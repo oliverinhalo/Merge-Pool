@@ -17,7 +17,7 @@ namespace MergePool.Ipc.Protocol;
 /// </remarks>
 public static class ProtocolVersion
 {
-    public const int Current = 2;
+    public const int Current = 3;
 
     public const int MinimumSupported = 1;
 
@@ -41,11 +41,28 @@ public static class Capabilities
     public const string Adoption = "adoption";
     /// <summary>Changing the drives of a pool that already exists (protocol 2).</summary>
     public const string PoolEdit = "poolEdit";
+    /// <summary>Per-drive and per-pool usage measured inside the pool parts (protocol 3).</summary>
+    public const string Usage = "usage";
+    /// <summary>Taking a drive out of a pool, optionally moving its content off first (protocol 3).</summary>
+    public const string DriveRemoval = "driveRemoval";
+    /// <summary>Checking for and applying updates from the release feed (protocol 3).</summary>
+    public const string AutoUpdate = "autoUpdate";
     public const string Config = "config";
     public const string Upgrade = "upgrade";
 
     public static IReadOnlyList<string> All { get; } =
-        [Pools, Metrics, Rebalance, Adoption, PoolEdit, Config, Upgrade];
+    [
+        Pools,
+        Metrics,
+        Rebalance,
+        Adoption,
+        PoolEdit,
+        Usage,
+        DriveRemoval,
+        AutoUpdate,
+        Config,
+        Upgrade,
+    ];
 }
 
 /// <summary>Method names on the wire. Names are permanent: a method is deprecated, never reused.</summary>
@@ -58,6 +75,8 @@ public static class Methods
     public const string PoolCreate = "pool.create";
     public const string PoolRemove = "pool.remove";
     public const string PoolAddDrives = "pool.addDrives";
+    public const string PoolRemoveDrive = "pool.removeDrive";
+    public const string PoolPlanDriveRemoval = "pool.planDriveRemoval";
     public const string PoolMount = "pool.mount";
     public const string PoolUnmount = "pool.unmount";
     public const string PoolStatus = "pool.status";
@@ -73,6 +92,10 @@ public static class Methods
     public const string AdoptionRun = "adoption.run";
     public const string UpgradeDrain = "upgrade.drain";
     public const string UpgradeResume = "upgrade.resume";
+    public const string UpdateStatus = "update.status";
+    public const string UpdateCheck = "update.check";
+    public const string UpdateApply = "update.apply";
+    public const string UpdateSetOptions = "update.setOptions";
     public const string HealthCheck = "health.check";
 }
 
