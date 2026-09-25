@@ -255,11 +255,28 @@
                       </ListBox>
 
                       <!-- Acting on the selected drive. Both routes are spelled out. -->
-                      <Border Style="{StaticResource InsetCard}" Margin="0,4,0,0" Padding="12"
-                              Background="{DynamicResource SurfaceBrush}"
-                              Visibility="{Binding DataContext.CanRemoveDrive,
-                                           RelativeSource={RelativeSource AncestorType=Window},
-                                           Converter={StaticResource BoolToVisibility}}">
+                      <Border Margin="0,4,0,0" Padding="12"
+                              Background="{DynamicResource SurfaceBrush}">
+                        <Border.Style>
+                          <!--
+                            Only in the card of the pool actually selected: the buttons act on the
+                            selected drive, and that drive belongs to exactly one pool.
+                          -->
+                          <Style TargetType="Border" BasedOn="{StaticResource InsetCard}">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                              <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                  <Condition Binding="{Binding IsSelected,
+                                             RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True" />
+                                  <Condition Binding="{Binding DataContext.CanRemoveDrive,
+                                             RelativeSource={RelativeSource AncestorType=Window}}" Value="True" />
+                                </MultiDataTrigger.Conditions>
+                                <Setter Property="Visibility" Value="Visible" />
+                              </MultiDataTrigger>
+                            </Style.Triggers>
+                          </Style>
+                        </Border.Style>
                         <StackPanel>
                           <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,8">
                             <Run Text="Selected drive:" />
