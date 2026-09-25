@@ -53,6 +53,12 @@ change:
   `InvariantGlobalization` was enabled for every project, and WPF needs real culture data to
   resolve the UI language. Removed, with a test that fails if it is ever set again — CI compiles
   the UI but never launches it, so nothing else would catch it.
+- The installer failed to compile: a Pascal `{ }` comment in the `[Code]` section contained
+  `{app}`, and the `}` inside it closed the comment early, leaving the rest of the sentence to be
+  parsed as code. All `[Code]` comments are now `//`, which cannot be ended by a brace. CI now
+  compiles the installer on Windows and uploads it, so this is caught before release.
+- Dropped an installer `[Files]` entry that copied the downloaded `winfsp.msi` from `{tmp}` onto
+  itself; the download already lands where `[Run]` needs it.
 - `installer\build.ps1` only looked for Inno Setup in two fixed folders and failed on a perfectly
   good install elsewhere. It now checks `PATH`, the uninstall registry entry (per-machine and
   per-user) and the usual folders including `%LOCALAPPDATA%\Programs`, takes an explicit

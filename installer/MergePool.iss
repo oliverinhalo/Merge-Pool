@@ -46,8 +46,6 @@ Source: "..\artifacts\publish\service\*"; DestDir: "{app}\versions\{#AppVersion}
 Source: "..\artifacts\publish\ui\*"; DestDir: "{app}\versions\{#AppVersion}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\artifacts\publish\updater\*"; DestDir: "{app}\versions\{#AppVersion}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\CHANGELOG.md"; DestDir: "{app}\versions\{#AppVersion}"; Flags: ignoreversion
-; Downloaded at run time when WinFsp is missing.
-Source: "{tmp}\winfsp.msi"; DestDir: "{tmp}"; Flags: external skipifsourcedoesntexist
 
 [Dirs]
 Name: "{commonappdata}\{#AppName}"; Permissions: users-modify
@@ -91,7 +89,7 @@ var
 
 function WinFspInstalled: Boolean;
 begin
-  { WinFsp registers its install directory; the driver DLL next to it is the thing we actually need. }
+  // WinFsp registers its install directory; the driver DLL next to it is what we actually need.
   Result :=
     RegKeyExists(HKEY_LOCAL_MACHINE, 'SOFTWARE\WOW6432Node\WinFsp') or
     RegKeyExists(HKEY_LOCAL_MACHINE, 'SOFTWARE\WinFsp') or
@@ -112,21 +110,21 @@ begin
                  SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
 end;
 
-function StopServiceIfRunning: Boolean;
+procedure StopServiceIfRunning;
 var
   ResultCode: Integer;
 begin
-  Result := True;
   if ServiceExists then
   begin
-    { Stopping unmounts the pools cleanly. Nothing on the drives is touched. }
+    // Stopping unmounts the pools cleanly. Nothing on the drives is touched.
     Exec(ExpandConstant('{sys}\sc.exe'), 'stop {#ServiceName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     Sleep(3000);
   end;
 end;
 
-{ Repoints {app}\current at the version just installed. Built beside the old link and swapped, so a
-  failure part-way leaves either the old link or the new one, never a missing 'current'. }
+// Repoints {app}\current at the version just installed. Built beside the old link and swapped, so
+// a failure part-way leaves either the old link or the new one, never a missing 'current'.
+// Note: these are // comments on purpose. A Pascal { } comment would end at the } in {app}.
 function PointCurrentAt(Version: String): Boolean;
 var
   ResultCode: Integer;
@@ -186,7 +184,7 @@ end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
-  { An upgrade must not overwrite files the running service has open. }
+  // An upgrade must not overwrite files the running service has open.
   StopServiceIfRunning;
   Result := '';
 end;
@@ -197,7 +195,8 @@ begin
   begin
     if not PointCurrentAt('{#AppVersion}') then
       SuppressibleMsgBox(
-        'MergePool could not point {app}\current at version {#AppVersion}.' + #13#10 +
+        'MergePool could not point ' + ExpandConstant('{app}\current') +
+        ' at version {#AppVersion}.' + #13#10 +
         'The files are installed; run MergePool.Updater --version {#AppVersion} to finish.',
         mbError, MB_OK, IDOK);
   end;

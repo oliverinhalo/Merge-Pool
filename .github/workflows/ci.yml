@@ -41,3 +41,27 @@ jobs:
       - run: dotnet restore MergePool.sln
       - run: dotnet build MergePool.sln --no-restore -c Release
       - run: dotnet test MergePool.sln --no-build -c Release --verbosity normal
+
+  installer:
+    name: Installer (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Install WinFsp
+        run: choco install winfsp --yes --no-progress
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+      # Publishes the service, UI and updater and compiles MergePool.iss, so a mistake in the
+      # installer script or its Pascal [Code] section fails here instead of on someone's machine.
+      - name: Build the installer
+        shell: pwsh
+        run: .\installer\build.ps1 -Configuration Release
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: MergePool-setup
+          path: installer/Output/*.exe
+          if-no-files-found: error
