@@ -16,6 +16,13 @@ change:
 
 Data format: unchanged. Config schema: unchanged.
 
+### Changed
+
+- **The web interface has its own Remote tab.** It was the second-to-last section of a scrolling
+  Settings tab, below the placement, throttling and rebalancing cards, which is not somewhere anyone
+  finds a feature they have not been told about. It is now a tab of its own, named in the tab strip,
+  with a line at the top saying what turning it on does. Nothing about the setting itself changed.
+
 ### Fixed
 
 - **A fresh install registered the service against a path that did not exist yet.** Setup runs its

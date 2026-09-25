@@ -173,7 +173,7 @@ upgrades an existing install in place.
 MergePool can serve a small web page on a port you choose, so you can check the pools or mount a
 drive from a phone, a laptop, or another PC. It is **off until you turn it on**.
 
-In **Settings → Web interface**:
+In the **Remote** tab of the MergePool window:
 
 1. Tick **Control MergePool from a browser**.
 2. Set the **port**. Anything from 1024 to 65535; 8787 is the default. If something else is already
@@ -295,12 +295,12 @@ checks stops MergePool trying, and you can install by hand from the releases pag
 **The web page will not load from another device**
 
 Three things, in order. Is **Let other devices on my network reach it** ticked — without it only this
-computer can connect. Does Settings → Web interface say **Listening**, or does it report a problem
-with the port. And is the firewall letting the port through: MergePool opens it for you unless you
+computer can connect. Does the **Remote** tab say **Listening**, or does it report a problem with
+the port. And is the firewall letting the port through: MergePool opens it for you unless you
 unticked that, but some security software adds rules of its own.
 
-If the page loads but says the token is not accepted, copy it again from Settings — it may have been
-replaced.
+If the page loads but says the token is not accepted, copy it again from the **Remote** tab — it may
+have been replaced.
 
 **Where are the logs?**
 
