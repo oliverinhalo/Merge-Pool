@@ -61,7 +61,7 @@ This publishes the service, the UI and the updater into `artifacts\publish\`, th
 `installer\MergePool.iss` with Inno Setup. The result is:
 
 ```
-installer\Output\MergePool-0.4.0-setup.exe
+installer\Output\MergePool-0.4.1-setup.exe
 ```
 
 The version comes from `<VersionPrefix>` in `Directory.Build.props`, so the installer and the

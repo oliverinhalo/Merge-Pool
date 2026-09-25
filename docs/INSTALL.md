@@ -37,7 +37,7 @@ one.
 
 ### 2. Install
 
-1. Download `MergePool-0.4.0-setup.exe`.
+1. Download `MergePool-0.4.1-setup.exe`.
 2. Run it and accept the UAC prompt.
 3. If WinFsp is missing, setup downloads and installs it before continuing. This needs an internet
    connection. If the download fails, setup tells you so and stops — install WinFsp yourself from
@@ -201,7 +201,7 @@ off or stop the service. If you would rather manage that yourself, untick the op
 
 | Path | What it is |
 | --- | --- |
-| `C:\Program Files\MergePool\versions\0.4.0\` | The program files for one version |
+| `C:\Program Files\MergePool\versions\0.4.1\` | The program files for one version |
 | `C:\Program Files\MergePool\current` | A junction pointing at the version in use |
 | `C:\ProgramData\MergePool\config.json` | Your pools and settings. Deliberately outside the program folder so updates never disturb it |
 | `<each pooled drive>\.PoolPart-{GUID}\` | Your pooled files, as ordinary files in the same folder structure you see in the pool |

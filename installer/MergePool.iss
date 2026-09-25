@@ -13,7 +13,7 @@
 #ifndef AppVersion
   ; build.ps1 passes /DAppVersion from Directory.Build.props. This is only the fallback for
   ; compiling the script straight from the Inno Setup IDE.
-  #define AppVersion "0.4.0"
+  #define AppVersion "0.4.1"
 #endif
 #define ServiceName "MergePool"
 #define WinFspUrl "https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-2.0.23075.msi"
@@ -67,20 +67,15 @@ Name: "{userstartup}\{#AppName}"; Filename: "{app}\current\MergePool.exe"; Param
 Filename: "msiexec.exe"; Parameters: "/i ""{tmp}\winfsp.msi"" /qn /norestart"; \
   StatusMsg: "Installing WinFsp…"; Check: NeedsWinFsp; Flags: waituntilterminated
 
-Filename: "{sys}\sc.exe"; Parameters: "create {#ServiceName} binPath= ""{app}\current\MergePool.Service.exe"" start= auto DisplayName= ""MergePool Pool Engine"""; \
-  StatusMsg: "Registering the MergePool service…"; Flags: runhidden waituntilterminated; Check: not ServiceExists
+; The service is registered from [Code], not here. [Run] entries execute before ssPostInstall, and
+; ssPostInstall is where {app}\current is created — so a [Run] entry would register the service
+; against a path that does not exist yet and then fail to start it, on every fresh install.
 
-Filename: "{sys}\sc.exe"; Parameters: "description {#ServiceName} ""Serves MergePool's pooled drives. Stopping this service unmounts the pools; the files stay on their drives."""; \
-  Flags: runhidden waituntilterminated
-
-Filename: "{sys}\sc.exe"; Parameters: "failure {#ServiceName} reset= 86400 actions= restart/5000/restart/10000/restart/30000"; \
-  Flags: runhidden waituntilterminated
-
-Filename: "{sys}\sc.exe"; Parameters: "start {#ServiceName}"; \
-  StatusMsg: "Starting the MergePool service…"; Flags: runhidden waituntilterminated; Check: ShouldStartService
-
-Filename: "{app}\current\MergePool.exe"; Description: "Open MergePool"; \
-  Flags: postinstall nowait skipifsilent
+; Launched from the version directory rather than through the link, so this one convenience does not
+; depend on the link, and as the signed-in user rather than the administrator who ran setup: the
+; window is asInvoker by design and keeps its settings under that user's own registry.
+Filename: "{app}\versions\{#AppVersion}\MergePool.exe"; Description: "Open MergePool"; \
+  Flags: postinstall nowait skipifsilent runasoriginaluser
 
 [UninstallRun]
 ; Stop and remove the service. Pool parts and their files are deliberately left on the drives.
@@ -195,8 +190,39 @@ begin
     CreateJunction(CurrentPath, TargetPath);
   end;
 
-  // Whether the link resolves to a runnable service is the only thing that actually matters.
-  Result := FileExists(AddBackslash(CurrentPath) + 'MergePool.Service.exe');
+  // Whether the link resolves to runnable binaries is the only thing that actually matters. Both
+  // are checked: the service is started through it and the shortcuts point at it, and a link that
+  // resolves for one and not the other is not a working install.
+  Result := FileExists(AddBackslash(CurrentPath) + 'MergePool.Service.exe') and
+            FileExists(AddBackslash(CurrentPath) + 'MergePool.exe');
+end;
+
+function RunHidden(Command, Arguments: String): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := Exec(Command, Arguments, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+end;
+
+// Registers the service against ServiceBinary and starts it. Called from ssPostInstall rather than
+// [Run] because [Run] happens first, before {app}\current exists.
+procedure RegisterService(ServiceBinary: String);
+var
+  Sc: String;
+begin
+  Sc := ExpandConstant('{sys}\sc.exe');
+
+  if ServiceExists then
+    // An upgrade may be moving the service onto a different path than it was registered with.
+    RunHidden(Sc, 'config {#ServiceName} binPath= "' + ServiceBinary + '" start= auto')
+  else
+    RunHidden(Sc, 'create {#ServiceName} binPath= "' + ServiceBinary + '" start= auto DisplayName= "MergePool Pool Engine"');
+
+  RunHidden(Sc, 'description {#ServiceName} "Serves MergePool''s pooled drives. Stopping this service unmounts the pools; the files stay on their drives."');
+  RunHidden(Sc, 'failure {#ServiceName} reset= 86400 actions= restart/5000/restart/10000/restart/30000');
+
+  if ShouldStartService then
+    RunHidden(Sc, 'start {#ServiceName}');
 end;
 
 procedure InitializeWizard;
@@ -238,15 +264,26 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  if CurStep = ssPostInstall then
+  if CurStep <> ssPostInstall then
+    Exit;
+
+  if PointCurrentAt('{#AppVersion}') then
   begin
-    if not PointCurrentAt('{#AppVersion}') then
-      SuppressibleMsgBox(
-        'MergePool could not point ' + ExpandConstant('{app}\current') +
-        ' at version {#AppVersion}.' + #13#10 +
-        'The files are installed; run MergePool.Updater --version {#AppVersion} to finish.',
-        mbError, MB_OK, IDOK);
+    // Through the link, so an upgrade only has to repoint it.
+    RegisterService(ExpandConstant('{app}\current\MergePool.Service.exe'));
+    Exit;
   end;
+
+  // The link did not resolve. Rather than leave a service pointing at nothing, register this
+  // version directly: MergePool works, it just cannot switch versions until the link is repaired.
+  RegisterService(ExpandConstant('{app}\versions\{#AppVersion}\MergePool.Service.exe'));
+
+  SuppressibleMsgBox(
+    'MergePool could not create ' + ExpandConstant('{app}\current') + '.' + #13#10#13#10 +
+    'It has been set up to run version {#AppVersion} directly instead, so MergePool works — but ' +
+    'the Start menu shortcut will not, and updates cannot switch versions until this is repaired. ' +
+    'Open ' + ExpandConstant('{app}\versions\{#AppVersion}\MergePool.exe') + ' to use it.',
+    mbError, MB_OK, IDOK);
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
