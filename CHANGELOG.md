@@ -12,6 +12,35 @@ change:
 - **Config schema** — `config.json` `schemaVersion`, migrated forward only, backed up first,
   unknown fields preserved.
 
+## [0.4.1] - 2026-09-25
+
+Data format: unchanged. Config schema: unchanged.
+
+### Changed
+
+- **The web interface has its own Remote tab.** It was the second-to-last section of a scrolling
+  Settings tab, below the placement, throttling and rebalancing cards, which is not somewhere anyone
+  finds a feature they have not been told about. It is now a tab of its own, named in the tab strip,
+  with a line at the top saying what turning it on does. Nothing about the setting itself changed.
+
+### Fixed
+
+- **A fresh install registered the service against a path that did not exist yet.** Setup runs its
+  `[Run]` entries before `ssPostInstall`, and `ssPostInstall` is where `{app}\current` is created —
+  so `sc create` pointed the service at `{app}\current\MergePool.Service.exe` before that link
+  existed, and the `sc start` that followed had nothing to start. Registration and starting now
+  happen from `[Code]`, after the link is made. On an upgrade the link already existed, which is why
+  this only ever bit a first install.
+- If the link cannot be created, setup now registers the version directory directly instead of
+  leaving a service pointing at nothing. MergePool works; it just cannot switch versions until the
+  link is repaired, and setup says so and names the executable to open.
+- The link is now verified against both executables it has to resolve, not just the service's. One
+  that resolves for the service and not the window is not a working install.
+- Setup's "Open MergePool" now launches the version directory directly rather than through the link,
+  and as the signed-in user rather than the administrator who ran setup. The window is `asInvoker`
+  by design and keeps its start-up setting in that user's own registry, so launching it elevated put
+  it in the wrong place.
+
 ## [0.4.0] - 2026-09-25
 
 Data format: unchanged. Config schema: unchanged — a `web` section is added with defaults, and a

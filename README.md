@@ -16,7 +16,7 @@ custom kernel driver.
 ### Quick start (Windows)
 
 1. Install the [.NET 8 Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/8.0).
-2. Run `MergePool-0.4.0-setup.exe` as an administrator. It installs WinFsp if you do not have it.
+2. Run `MergePool-0.4.1-setup.exe` as an administrator. It installs WinFsp if you do not have it.
 3. Open MergePool, tick the drives you want, choose a drive letter, click **Create pool**.
 
 That is the only install you have to do by hand: MergePool keeps itself up to date from then on.
@@ -90,7 +90,7 @@ See [docs/UPGRADES.md](docs/UPGRADES.md).
 
 ## Status
 
-Version 0.4.0. All six milestones are in — core pool library, WinFsp mount, placement and throttle
+Version 0.4.1. All six milestones are in — core pool library, WinFsp mount, placement and throttle
 engine, service and IPC, WPF UI, installer and updater — plus growing and shrinking a live pool,
 measured pool usage, and updating itself from the release feed.
 

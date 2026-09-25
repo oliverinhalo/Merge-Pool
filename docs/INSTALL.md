@@ -37,7 +37,7 @@ one.
 
 ### 2. Install
 
-1. Download `MergePool-0.4.0-setup.exe`.
+1. Download `MergePool-0.4.1-setup.exe`.
 2. Run it and accept the UAC prompt.
 3. If WinFsp is missing, setup downloads and installs it before continuing. This needs an internet
    connection. If the download fails, setup tells you so and stops — install WinFsp yourself from
@@ -173,7 +173,7 @@ upgrades an existing install in place.
 MergePool can serve a small web page on a port you choose, so you can check the pools or mount a
 drive from a phone, a laptop, or another PC. It is **off until you turn it on**.
 
-In **Settings → Web interface**:
+In the **Remote** tab of the MergePool window:
 
 1. Tick **Control MergePool from a browser**.
 2. Set the **port**. Anything from 1024 to 65535; 8787 is the default. If something else is already
@@ -201,7 +201,7 @@ off or stop the service. If you would rather manage that yourself, untick the op
 
 | Path | What it is |
 | --- | --- |
-| `C:\Program Files\MergePool\versions\0.4.0\` | The program files for one version |
+| `C:\Program Files\MergePool\versions\0.4.1\` | The program files for one version |
 | `C:\Program Files\MergePool\current` | A junction pointing at the version in use |
 | `C:\ProgramData\MergePool\config.json` | Your pools and settings. Deliberately outside the program folder so updates never disturb it |
 | `<each pooled drive>\.PoolPart-{GUID}\` | Your pooled files, as ordinary files in the same folder structure you see in the pool |
@@ -295,12 +295,12 @@ checks stops MergePool trying, and you can install by hand from the releases pag
 **The web page will not load from another device**
 
 Three things, in order. Is **Let other devices on my network reach it** ticked — without it only this
-computer can connect. Does Settings → Web interface say **Listening**, or does it report a problem
-with the port. And is the firewall letting the port through: MergePool opens it for you unless you
+computer can connect. Does the **Remote** tab say **Listening**, or does it report a problem with
+the port. And is the firewall letting the port through: MergePool opens it for you unless you
 unticked that, but some security software adds rules of its own.
 
-If the page loads but says the token is not accepted, copy it again from Settings — it may have been
-replaced.
+If the page loads but says the token is not accepted, copy it again from the **Remote** tab — it may
+have been replaced.
 
 **Where are the logs?**
 

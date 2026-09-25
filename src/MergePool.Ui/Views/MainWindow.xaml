@@ -453,7 +453,51 @@
                 </StackPanel>
                 <TextBlock Style="{StaticResource Caption}" Text="{Binding Settings.Message}" />
 
-                <TextBlock Text="WEB INTERFACE" Style="{StaticResource Subheading}" Margin="0,18,0,6" />
+                <TextBlock Text="UPDATES AND START-UP" Style="{StaticResource Subheading}" Margin="0,18,0,6" />
+                <Border Style="{StaticResource InsetCard}">
+                  <StackPanel>
+                    <TextBlock Style="{StaticResource Body}" Text="{Binding Updates.Headline}" Margin="0,0,0,4" />
+                    <TextBlock Style="{StaticResource Caption}" Text="{Binding Updates.LastChecked}" Margin="0,0,0,12" />
+
+                    <CheckBox IsChecked="{Binding Updates.AutomaticChecks, Mode=TwoWay}" Margin="0,0,0,10"
+                              Content="Check for new versions automatically" />
+                    <CheckBox IsChecked="{Binding Updates.AutomaticInstall, Mode=TwoWay}" Margin="0,0,0,10">
+                      <TextBlock TextWrapping="Wrap" FontSize="13"
+                                 Text="Install them without asking. An update only adds a new version folder and switches which one runs — your pools and files are never touched, and a version that fails to come up is rolled back." />
+                    </CheckBox>
+                    <CheckBox IsChecked="{Binding Updates.StartWithWindows, Mode=TwoWay}" Margin="0,0,0,14">
+                      <TextBlock TextWrapping="Wrap" FontSize="13"
+                                 Text="Open this window in the notification area when I sign in. The pools are mounted by the service either way, whether or not the window is open." />
+                    </CheckBox>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                      <Button Content="Check now" MinWidth="112" Command="{Binding Updates.CheckCommand}" />
+                      <Button Content="Install now" Style="{StaticResource PrimaryButton}" MinWidth="112"
+                              Command="{Binding Updates.InstallCommand}" />
+                    </StackPanel>
+
+                    <TextBlock Style="{StaticResource Caption}" Text="{Binding Updates.Message}" />
+                    <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,0"
+                               Foreground="{DynamicResource DangerBrush}"
+                               Text="{Binding Updates.Problem}" />
+                    <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,0">
+                      <Run Text="Versions installed:" />
+                      <Run Text="{Binding Updates.InstalledVersionsText, Mode=OneWay}" />
+                    </TextBlock>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </ScrollViewer>
+          </TabItem>
+
+          <!-- Controlling MergePool from a browser -->
+          <TabItem Header="Remote">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
+              <StackPanel>
+                <TextBlock Text="Control MergePool from a browser" Style="{StaticResource Heading}" />
+                <TextBlock Style="{StaticResource Body}" Margin="0,0,0,14"
+                           Text="Turn this on and MergePool answers on a port of your choosing: the same pools, drives and controls as this window, in a browser on this computer or on your phone. The service does the serving, so it keeps working whether or not this window is open." />
+
                 <Border Style="{StaticResource InsetCard}" Margin="0,0,0,16">
                   <StackPanel>
                     <CheckBox IsChecked="{Binding Web.Enabled, Mode=TwoWay}" Margin="0,0,0,12">
@@ -551,39 +595,6 @@
                   </StackPanel>
                 </Border>
 
-                <TextBlock Text="UPDATES AND START-UP" Style="{StaticResource Subheading}" Margin="0,18,0,6" />
-                <Border Style="{StaticResource InsetCard}">
-                  <StackPanel>
-                    <TextBlock Style="{StaticResource Body}" Text="{Binding Updates.Headline}" Margin="0,0,0,4" />
-                    <TextBlock Style="{StaticResource Caption}" Text="{Binding Updates.LastChecked}" Margin="0,0,0,12" />
-
-                    <CheckBox IsChecked="{Binding Updates.AutomaticChecks, Mode=TwoWay}" Margin="0,0,0,10"
-                              Content="Check for new versions automatically" />
-                    <CheckBox IsChecked="{Binding Updates.AutomaticInstall, Mode=TwoWay}" Margin="0,0,0,10">
-                      <TextBlock TextWrapping="Wrap" FontSize="13"
-                                 Text="Install them without asking. An update only adds a new version folder and switches which one runs — your pools and files are never touched, and a version that fails to come up is rolled back." />
-                    </CheckBox>
-                    <CheckBox IsChecked="{Binding Updates.StartWithWindows, Mode=TwoWay}" Margin="0,0,0,14">
-                      <TextBlock TextWrapping="Wrap" FontSize="13"
-                                 Text="Open this window in the notification area when I sign in. The pools are mounted by the service either way, whether or not the window is open." />
-                    </CheckBox>
-
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                      <Button Content="Check now" MinWidth="112" Command="{Binding Updates.CheckCommand}" />
-                      <Button Content="Install now" Style="{StaticResource PrimaryButton}" MinWidth="112"
-                              Command="{Binding Updates.InstallCommand}" />
-                    </StackPanel>
-
-                    <TextBlock Style="{StaticResource Caption}" Text="{Binding Updates.Message}" />
-                    <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,0"
-                               Foreground="{DynamicResource DangerBrush}"
-                               Text="{Binding Updates.Problem}" />
-                    <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,0">
-                      <Run Text="Versions installed:" />
-                      <Run Text="{Binding Updates.InstalledVersionsText, Mode=OneWay}" />
-                    </TextBlock>
-                  </StackPanel>
-                </Border>
               </StackPanel>
             </ScrollViewer>
           </TabItem>
