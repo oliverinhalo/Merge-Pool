@@ -37,7 +37,7 @@ one.
 
 ### 2. Install
 
-1. Download `MergePool-0.3.0-setup.exe`.
+1. Download `MergePool-0.4.0-setup.exe`.
 2. Run it and accept the UAC prompt.
 3. If WinFsp is missing, setup downloads and installs it before continuing. This needs an internet
    connection. If the download fails, setup tells you so and stops — install WinFsp yourself from
@@ -168,11 +168,40 @@ In **Settings → Updates and start-up** you can:
 If you would rather do it by hand, the releases page has a setup executable as well; running it
 upgrades an existing install in place.
 
-### 5. Where MergePool puts things
+### 5. Controlling MergePool from a browser
+
+MergePool can serve a small web page on a port you choose, so you can check the pools or mount a
+drive from a phone, a laptop, or another PC. It is **off until you turn it on**.
+
+In **Settings → Web interface**:
+
+1. Tick **Control MergePool from a browser**.
+2. Set the **port**. Anything from 1024 to 65535; 8787 is the default. If something else is already
+   using it, MergePool says so and nothing is exposed — pick another and click **Use this port**.
+3. Decide who can reach it. Off (the default) means **only this computer**. Tick **Let other devices
+   on my network reach it** to open it to the LAN.
+4. Copy the **access token** and click **Open in browser**.
+
+On another device, browse to `http://<this-pc-name>:<port>/` and paste the token when asked.
+
+**How it is protected.** Every request has to present the access token; without it, the page has
+nothing to show and nothing can be changed. The token is a long random string, and replacing it with
+**New token** signs out every browser instantly. There is also a **look but don't touch** option that
+lets a browser see the pools while refusing anything that would change them.
+
+**What it is not.** The connection is plain HTTP — the traffic is not encrypted. Anyone on your
+network who has the token can control MergePool. Use it on a network you trust; do not forward the
+port to the internet.
+
+**Firewall.** MergePool opens the port for you while the interface is on and set to reach the
+network, on the private and domain profiles only, and closes it again when you turn the interface
+off or stop the service. If you would rather manage that yourself, untick the option.
+
+### 6. Where MergePool puts things
 
 | Path | What it is |
 | --- | --- |
-| `C:\Program Files\MergePool\versions\0.3.0\` | The program files for one version |
+| `C:\Program Files\MergePool\versions\0.4.0\` | The program files for one version |
 | `C:\Program Files\MergePool\current` | A junction pointing at the version in use |
 | `C:\ProgramData\MergePool\config.json` | Your pools and settings. Deliberately outside the program folder so updates never disturb it |
 | `<each pooled drive>\.PoolPart-{GUID}\` | Your pooled files, as ordinary files in the same folder structure you see in the pool |
@@ -182,7 +211,7 @@ movies, with normal names, permissions and timestamps. No database, no container
 format. If MergePool is uninstalled, or the machine dies and you put the drive in another PC, the
 files are still there and still readable.
 
-### 6. Updating by hand
+### 7. Updating by hand
 
 Run the newer installer. It stops the service, installs the new version **alongside** the old one,
 and points `current` at it. Your configuration and your pooled files are untouched.
@@ -199,7 +228,7 @@ new version. **If the new version does not come up healthy, it puts the old one 
 that your pools are serving again.** Exit codes: `0` success, `1` rolled back, `3` the rollback
 also failed and the machine needs attention.
 
-### 7. Uninstalling
+### 8. Uninstalling
 
 Uninstall MergePool from **Settings → Apps** as usual. It stops and removes the service and deletes
 the program folder.
@@ -210,7 +239,7 @@ then delete the empty folder.
 
 WinFsp is left installed; remove it separately if you want it gone.
 
-### 8. If something goes wrong
+### 9. If something goes wrong
 
 **The pool drive letter does not appear**
 
@@ -262,6 +291,16 @@ what went wrong and which versions are on disk. A failed version is not retried 
 
 If the download keeps failing, the machine may not be able to reach GitHub. Turning off automatic
 checks stops MergePool trying, and you can install by hand from the releases page whenever you like.
+
+**The web page will not load from another device**
+
+Three things, in order. Is **Let other devices on my network reach it** ticked — without it only this
+computer can connect. Does Settings → Web interface say **Listening**, or does it report a problem
+with the port. And is the firewall letting the port through: MergePool opens it for you unless you
+unticked that, but some security software adds rules of its own.
+
+If the page loads but says the token is not accepted, copy it again from Settings — it may have been
+replaced.
 
 **Where are the logs?**
 

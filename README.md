@@ -16,7 +16,7 @@ custom kernel driver.
 ### Quick start (Windows)
 
 1. Install the [.NET 8 Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/8.0).
-2. Run `MergePool-0.3.0-setup.exe` as an administrator. It installs WinFsp if you do not have it.
+2. Run `MergePool-0.4.0-setup.exe` as an administrator. It installs WinFsp if you do not have it.
 3. Open MergePool, tick the drives you want, choose a drive letter, click **Create pool**.
 
 That is the only install you have to do by hand: MergePool keeps itself up to date from then on.
@@ -41,6 +41,9 @@ Full detail, including what to expect and what to do when something goes wrong, 
 - **Says what the pool is holding**, as opposed to what its drives are holding. A pooled drive can be
   full of files that were never pooled; the two figures are measured and shown separately, and the
   pool's ceiling is its own content plus the space actually free.
+- **Controllable from a browser**, on a port you choose, if you want it: the same pool status and
+  controls, served by the service on your own network. Off by default, access-token protected, and
+  bound to the local machine until you say otherwise.
 - **Updates itself.** After the first install, new versions are downloaded, checksum-verified,
   unpacked beside the running one and switched to. Nothing is overwritten, your configuration and
   pooled files are never touched, and a version that does not come up healthy is rolled back.
@@ -81,16 +84,17 @@ See [docs/UPGRADES.md](docs/UPGRADES.md).
 | `src/MergePool.Service` | Windows service host | Windows |
 | `src/MergePool.Ui` | WPF front end | Windows |
 | `src/MergePool.Updater` | Upgrade CLI | Windows |
-| `tests/` | 275 tests, all runnable on any OS | any OS |
+| `src/MergePool.Web` | Optional web interface: HTTP server, JSON API, single-page app | any OS |
+| `tests/` | 321 tests, all runnable on any OS | any OS |
 | `installer/` | Inno Setup script and the publish + package script | Windows |
 
 ## Status
 
-Version 0.3.0. All six milestones are in — core pool library, WinFsp mount, placement and throttle
+Version 0.4.0. All six milestones are in — core pool library, WinFsp mount, placement and throttle
 engine, service and IPC, WPF UI, installer and updater — plus growing and shrinking a live pool,
 measured pool usage, and updating itself from the release feed.
 
-275 tests pass on Linux and Windows. CI compiles the full Windows solution against a real WinFsp
+321 tests pass on Linux and Windows. CI compiles the full Windows solution against a real WinFsp
 install and builds the installer, so a `[Code]` change that will not compile fails there rather than
 on a user's machine.
 

@@ -13,7 +13,7 @@
 #ifndef AppVersion
   ; build.ps1 passes /DAppVersion from Directory.Build.props. This is only the fallback for
   ; compiling the script straight from the Inno Setup IDE.
-  #define AppVersion "0.3.0"
+  #define AppVersion "0.4.0"
 #endif
 #define ServiceName "MergePool"
 #define WinFspUrl "https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-2.0.23075.msi"

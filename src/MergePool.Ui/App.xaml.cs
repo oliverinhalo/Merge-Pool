@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.Versioning;
 using System.Windows;
+using System.Threading;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using MergePool.Ui.Services;
@@ -44,6 +45,9 @@ public partial class App : Application
             ConfirmAction = Confirm,
             OpenInExplorer = OpenInExplorer,
         };
+
+        _viewModel.Web.CopyToClipboard = CopyToClipboard;
+        _viewModel.Web.OpenInBrowser = OpenInExplorer;
 
         _window = new MainWindow { DataContext = _viewModel };
         _window.Closing += OnWindowClosing;
@@ -141,6 +145,26 @@ public partial class App : Application
             MessageBoxResult.Cancel);
 
         return answer == MessageBoxResult.OK;
+    }
+
+    /// <summary>
+    /// The clipboard is occasionally locked by another process, and a failed copy is not worth
+    /// taking the window down for.
+    /// </summary>
+    private static void CopyToClipboard(string text)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                Clipboard.SetText(text);
+                return;
+            }
+            catch (System.Runtime.InteropServices.COMException)
+            {
+                Thread.Sleep(80);
+            }
+        }
     }
 
     private static void OpenInExplorer(string path)
