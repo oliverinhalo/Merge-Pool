@@ -60,42 +60,34 @@ public sealed class BoolToVisibilityConverter : IValueConverter
 /// <summary>Colours a drive's status: missing is a problem, throttled is only a warning.</summary>
 public sealed class StatusBrushConverter : IValueConverter
 {
-    private static readonly SolidColorBrush Problem = Frozen(0xC4, 0x2B, 0x1C);
-    private static readonly SolidColorBrush Warning = Frozen(0x8A, 0x63, 0x00);
-    private static readonly SolidColorBrush Muted = Frozen(0x60, 0x60, 0x60);
-    private static readonly SolidColorBrush Good = Frozen(0x0F, 0x7B, 0x0F);
-
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
         if (value is not string status)
         {
-            return Good;
+            return Brush("SuccessBrush");
         }
 
         if (status.StartsWith("Throttled", StringComparison.Ordinal))
         {
-            return Warning;
+            return Brush("WarningBrush");
         }
 
         return status switch
         {
-            "Missing" or "Offline" => Problem,
-            "Not ready" or "Cannot be pooled" => Problem,
-            "Read-only" or "Degraded" => Warning,
-            "Already pooled" => Muted,
-            _ => Good,
+            "Missing" or "Offline" => Brush("DangerBrush"),
+            "Not ready" or "Cannot be pooled" => Brush("DangerBrush"),
+            "Read-only" or "Degraded" => Brush("WarningBrush"),
+            "Already pooled" => Brush("MutedTextBrush"),
+            _ => Brush("SuccessBrush"),
         };
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
         throw new NotSupportedException();
 
-    private static SolidColorBrush Frozen(byte r, byte g, byte b)
-    {
-        var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
-        brush.Freeze();
-        return brush;
-    }
+    /// <summary>Resolved from the active palette, so these colours follow light and dark.</summary>
+    private static object Brush(string key) =>
+        Application.Current?.TryFindResource(key) as Brush ?? Brushes.Gray;
 }
 
 /// <summary>Turns a 0..1 fraction into a percentage for the usage bars.</summary>
@@ -106,4 +98,55 @@ public sealed class FractionToPercentConverter : IValueConverter
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
         throw new NotSupportedException();
+}
+
+/// <summary>Shows an element only when a count is zero — the "nothing here yet" panels.</summary>
+public sealed class ZeroToVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
+        value is int count && count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
+/// <summary>
+/// Colours the connection pill. Theme brushes are looked up by name so the pill follows a theme
+/// change, rather than being frozen at whatever the palette was when the window opened.
+/// </summary>
+public abstract class ThemeBrushConverter : IValueConverter
+{
+    protected abstract string WhenTrue { get; }
+
+    protected abstract string WhenFalse { get; }
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        var key = value is true ? WhenTrue : WhenFalse;
+        return Application.Current?.TryFindResource(key) as Brush ?? Brushes.Gray;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
+public sealed class StatePillBrushConverter : ThemeBrushConverter
+{
+    protected override string WhenTrue => "SuccessSoftBrush";
+
+    protected override string WhenFalse => "DangerSoftBrush";
+}
+
+public sealed class StateDotBrushConverter : ThemeBrushConverter
+{
+    protected override string WhenTrue => "SuccessBrush";
+
+    protected override string WhenFalse => "DangerBrush";
+}
+
+public sealed class StateTextBrushConverter : ThemeBrushConverter
+{
+    protected override string WhenTrue => "SuccessBrush";
+
+    protected override string WhenFalse => "DangerBrush";
 }

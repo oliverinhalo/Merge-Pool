@@ -76,6 +76,7 @@ The UI and the service talk over a named pipe with a versioned protocol
 | --- | --- | --- |
 | 1 | The original method set | — |
 | 2 | `pool.addDrives`, capability `poolEdit` | Unaffected: `MinimumSupported` is still 1, and a v1 UI never calls the new method |
+| 3 | `pool.removeDrive`, `pool.planDriveRemoval`, `update.*`, measured usage fields, capabilities `usage`, `driveRemoval`, `autoUpdate` | Unaffected: the new fields are additive and an older UI never calls the new methods |
 
 ## Config migrations
 

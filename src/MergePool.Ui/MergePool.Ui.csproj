@@ -8,8 +8,13 @@
     <AssemblyName>MergePool</AssemblyName>
     <IsWindowsOnlyProject>true</IsWindowsOnlyProject>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\MergePool.ico</ApplicationIcon>
     <Platforms>AnyCPU;x64</Platforms>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\MergePool.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\MergePool.Ipc\MergePool.Ipc.csproj" />

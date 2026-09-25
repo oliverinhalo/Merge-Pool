@@ -10,7 +10,11 @@
 
 #define AppName "MergePool"
 #define AppPublisher "MergePool"
-#define AppVersion "0.2.0"
+#ifndef AppVersion
+  ; build.ps1 passes /DAppVersion from Directory.Build.props. This is only the fallback for
+  ; compiling the script straight from the Inno Setup IDE.
+  #define AppVersion "0.3.0"
+#endif
 #define ServiceName "MergePool"
 #define WinFspUrl "https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-2.0.23075.msi"
 
@@ -39,6 +43,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "startservice"; Description: "Start the MergePool service when setup finishes"; GroupDescription: "Service"
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts"; Flags: unchecked
+Name: "startup"; Description: "Open MergePool in the notification area when I sign in"; GroupDescription: "Shortcuts"
 
 [Files]
 ; Everything lands in a version directory. 'current' is created afterwards as a junction.
@@ -53,6 +58,9 @@ Name: "{commonappdata}\{#AppName}"; Permissions: users-modify
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\current\MergePool.exe"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\current\MergePool.exe"; Tasks: desktopicon
+; Started with --tray so signing in does not throw a window in the user's face. The pools are
+; mounted by the service regardless; this is only about having the window within reach.
+Name: "{userstartup}\{#AppName}"; Filename: "{app}\current\MergePool.exe"; Parameters: "--tray"; Tasks: startup
 
 [Run]
 ; WinFsp first: without it the service starts but cannot mount anything.
@@ -82,6 +90,7 @@ Filename: "{sys}\sc.exe"; Parameters: "delete {#ServiceName}"; Flags: runhidden 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\current"
 Type: filesandordirs; Name: "{app}\versions"
+Type: files; Name: "{userstartup}\{#AppName}.lnk"
 
 [Code]
 var

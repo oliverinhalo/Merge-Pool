@@ -26,10 +26,16 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
     private string? _errorMessage;
     private bool _isBusy;
     private string _serviceVersion = "not connected";
+    private bool _isConnected;
+    private PoolViewModel? _selectedPool;
+    private PoolPartViewModel? _selectedPart;
 
     public MainViewModel(ServiceConnection? service = null)
     {
         _service = service ?? new ServiceConnection();
+
+        Updates = new UpdateViewModel(_service, () => _shutdown.Token);
+        Settings = new SettingsViewModel(_service, () => _shutdown.Token);
 
         CreatePoolCommand = new AsyncCommand(CreatePoolAsync, () => CanCreatePool);
         RefreshCommand = new AsyncCommand(() => RefreshAsync(_shutdown.Token));
@@ -38,6 +44,9 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
         RemovePoolCommand = new AsyncCommand(RemoveSelectedPoolAsync, () => SelectedPool is not null);
         RebalanceCommand = new AsyncCommand(RebalanceAsync, () => SelectedPool is not null);
         AddDrivesCommand = new AsyncCommand(AddDrivesToSelectedPoolAsync, () => CanAddDrives);
+        DetachDriveCommand = new AsyncCommand(() => RemoveDriveAsync(moveFilesOff: false), () => CanRemoveDrive);
+        EvacuateDriveCommand = new AsyncCommand(() => RemoveDriveAsync(moveFilesOff: true), () => CanRemoveDrive);
+        OpenPoolCommand = new AsyncCommand(OpenSelectedPoolAsync, () => SelectedPool is { IsMounted: true });
 
         _timer = new DispatcherTimer { Interval = RefreshInterval };
         _timer.Tick += async (_, _) => await RefreshAsync(_shutdown.Token).ConfigureAwait(true);
@@ -49,6 +58,10 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
 
     /// <summary>Drive letters that are free for a new pool.</summary>
     public ObservableCollection<string> AvailableMountLetters { get; } = [];
+
+    public UpdateViewModel Updates { get; }
+
+    public SettingsViewModel Settings { get; }
 
     public AsyncCommand CreatePoolCommand { get; }
 
@@ -63,6 +76,23 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
     public AsyncCommand RebalanceCommand { get; }
 
     public AsyncCommand AddDrivesCommand { get; }
+
+    /// <summary>Takes a drive out and leaves its files on it.</summary>
+    public AsyncCommand DetachDriveCommand { get; }
+
+    /// <summary>Moves a drive's files onto the others first, then takes it out.</summary>
+    public AsyncCommand EvacuateDriveCommand { get; }
+
+    public AsyncCommand OpenPoolCommand { get; }
+
+    /// <summary>Set by the window so a removal can be confirmed before anything happens.</summary>
+    public Func<string, string, string, bool>? ConfirmAction { get; set; }
+
+    /// <summary>Set by the window to open the pool in Explorer.</summary>
+    public Action<string>? OpenInExplorer { get; set; }
+
+    /// <summary>Raised whenever the headline state changes, so the tray tooltip can follow it.</summary>
+    public event EventHandler<string>? StatusChanged;
 
     public string PoolName
     {
@@ -127,7 +157,19 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
         private set => Set(ref _serviceVersion, value);
     }
 
-    private PoolViewModel? _selectedPool;
+    public bool IsConnected
+    {
+        get => _isConnected;
+        private set
+        {
+            if (Set(ref _isConnected, value))
+            {
+                Raise(nameof(ConnectionText));
+            }
+        }
+    }
+
+    public string ConnectionText => IsConnected ? "Service running" : "Service not reachable";
 
     public PoolViewModel? SelectedPool
     {
@@ -136,13 +178,23 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
         {
             if (Set(ref _selectedPool, value))
             {
-                MountCommand.RaiseCanExecuteChanged();
-                UnmountCommand.RaiseCanExecuteChanged();
-                RemovePoolCommand.RaiseCanExecuteChanged();
-                RebalanceCommand.RaiseCanExecuteChanged();
-                AddDrivesCommand.RaiseCanExecuteChanged();
-                Raise(nameof(CanAddDrives));
-                Raise(nameof(AddDrivesLabel));
+                SelectedPart = value?.Parts.FirstOrDefault();
+                RaiseCommandStates();
+            }
+        }
+    }
+
+    /// <summary>The drive selected inside the pool, which the remove buttons act on.</summary>
+    public PoolPartViewModel? SelectedPart
+    {
+        get => _selectedPart;
+        set
+        {
+            if (Set(ref _selectedPart, value))
+            {
+                Raise(nameof(CanRemoveDrive));
+                DetachDriveCommand.RaiseCanExecuteChanged();
+                EvacuateDriveCommand.RaiseCanExecuteChanged();
             }
         }
     }
@@ -161,6 +213,13 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
         && Drives.Any(d => d.IsSelected)
         && _service.Supports(Capabilities.PoolEdit);
 
+    /// <summary>A pool must keep at least one drive, so the last one cannot be removed this way.</summary>
+    public bool CanRemoveDrive =>
+        SelectedPool is { } pool
+        && SelectedPart is not null
+        && pool.Parts.Count > 1
+        && _service.Supports(Capabilities.DriveRemoval);
+
     /// <summary>Label on the add button, so it names the pool the drives would join.</summary>
     public string AddDrivesLabel => SelectedPool is null
         ? "Add to pool"
@@ -169,6 +228,7 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
     public async Task StartAsync()
     {
         await RefreshAsync(_shutdown.Token).ConfigureAwait(true);
+        await Settings.LoadAsync().ConfigureAwait(true);
         _timer.Start();
     }
 
@@ -186,9 +246,12 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
         {
             ErrorMessage = _service.LastError ?? "The MergePool service is not reachable.";
             ServiceVersion = "not connected";
+            IsConnected = false;
+            AnnounceStatus();
             return;
         }
 
+        IsConnected = true;
         ServiceVersion = status.Draining
             ? status.ServiceVersion + " (updating)"
             : status.ServiceVersion;
@@ -199,6 +262,21 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
 
         await RefreshDrivesAsync(cancellationToken).ConfigureAwait(true);
         await RefreshPoolsAsync(cancellationToken).ConfigureAwait(true);
+        await RefreshUpdatesAsync(cancellationToken).ConfigureAwait(true);
+        AnnounceStatus();
+    }
+
+    private async Task RefreshUpdatesAsync(CancellationToken cancellationToken)
+    {
+        if (!_service.Supports(Capabilities.AutoUpdate))
+        {
+            return;
+        }
+
+        var status = await _service.TryInvokeAsync<UpdateStatusResult>(
+            Methods.UpdateStatus, null, cancellationToken).ConfigureAwait(true);
+
+        Updates.Apply(status);
     }
 
     private async Task RefreshDrivesAsync(CancellationToken cancellationToken)
@@ -285,11 +363,13 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
 
         SelectedPool ??= Pools.FirstOrDefault();
 
-        MountCommand.RaiseCanExecuteChanged();
-        UnmountCommand.RaiseCanExecuteChanged();
-        AddDrivesCommand.RaiseCanExecuteChanged();
-        Raise(nameof(CanAddDrives));
-        Raise(nameof(AddDrivesLabel));
+        // The selected drive can disappear underneath us when a pool changes.
+        if (SelectedPool is { } pool && (SelectedPart is null || pool.Parts.All(p => p.PartId != SelectedPart.PartId)))
+        {
+            SelectedPart = pool.Parts.FirstOrDefault();
+        }
+
+        RaiseCommandStates();
     }
 
     /// <summary>Offers letters that no physical drive is using.</summary>
@@ -353,11 +433,7 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
                 CultureInfo.CurrentCulture,
                 $"Pool '{pool.Name}' is mounted at {pool.MountPoint}.");
 
-            foreach (var drive in Drives)
-            {
-                drive.IsSelected = false;
-            }
-
+            ClearDriveSelection();
             await RefreshAsync(_shutdown.Token).ConfigureAwait(true);
         }
         catch (Exception exception) when (exception is IpcException or IOException)
@@ -405,9 +481,60 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
                 CultureInfo.CurrentCulture,
                 $"'{updated.Name}' now spans {updated.Parts.Count} drives. No remount was needed.");
 
-            foreach (var drive in Drives)
+            ClearDriveSelection();
+            await RefreshAsync(_shutdown.Token).ConfigureAwait(true);
+        }
+        catch (Exception exception) when (exception is IpcException or IOException)
+        {
+            ErrorMessage = exception.Message;
+            StatusMessage = null;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// Takes a drive out of the selected pool. Both routes are confirmed first, because one of them
+    /// moves data and the other changes what the pool can see.
+    /// </summary>
+    private async Task RemoveDriveAsync(bool moveFilesOff)
+    {
+        if (SelectedPool is not { } pool || SelectedPart is not { } part)
+        {
+            return;
+        }
+
+        if (!await ConfirmRemovalAsync(pool, part, moveFilesOff).ConfigureAwait(true))
+        {
+            return;
+        }
+
+        IsBusy = true;
+        StatusMessage = moveFilesOff
+            ? string.Create(
+                CultureInfo.CurrentCulture,
+                $"Moving {PoolPartViewModel.Format(part.PoolBytes)} off {part.DriveLetter} onto the other drives…")
+            : string.Create(CultureInfo.CurrentCulture, $"Removing {part.DriveLetter} from '{pool.Name}'…");
+
+        try
+        {
+            var result = await _service.InvokeAsync<DriveRemovalResultDto>(
+                Methods.PoolRemoveDrive,
+                new RemoveDriveRequest
+                {
+                    PoolId = pool.PoolId,
+                    VolumeId = part.VolumeId,
+                    MoveFilesOff = moveFilesOff,
+                },
+                _shutdown.Token).ConfigureAwait(true);
+
+            StatusMessage = result.Message;
+
+            if (!result.Removed)
             {
-                drive.IsSelected = false;
+                ErrorMessage = result.Message;
             }
 
             await RefreshAsync(_shutdown.Token).ConfigureAwait(true);
@@ -423,6 +550,56 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
         }
     }
 
+    private async Task<bool> ConfirmRemovalAsync(PoolViewModel pool, PoolPartViewModel part, bool moveFilesOff)
+    {
+        if (ConfirmAction is not { } confirm)
+        {
+            return true;
+        }
+
+        if (!moveFilesOff)
+        {
+            return confirm(
+                "Remove this drive from the pool?",
+                $"{part.DriveLetter} {part.Label} leaves '{pool.Name}'.\n\n"
+                + $"Nothing is deleted or moved. The {PoolPartViewModel.Format(part.PoolBytes)} it holds stay on the drive "
+                + "in its pool part folder, as ordinary files — they just stop appearing in the pool.",
+                "Remove drive");
+        }
+
+        // The plan is worth showing before a move: it says whether it can even finish.
+        var plan = await _service.TryInvokeAsync<DriveRemovalPlanResult>(
+            Methods.PoolPlanDriveRemoval,
+            new RemoveDriveRequest { PoolId = pool.PoolId, VolumeId = part.VolumeId, MoveFilesOff = true },
+            _shutdown.Token).ConfigureAwait(true);
+
+        if (plan is null)
+        {
+            ErrorMessage = _service.LastError ?? "MergePool could not work out what would have to move.";
+            return false;
+        }
+
+        if (!plan.Fits)
+        {
+            ErrorMessage = string.Create(
+                CultureInfo.CurrentCulture,
+                $"{part.DriveLetter} holds {PoolPartViewModel.Format(plan.TotalBytes)}, and the pool's other drives have only "
+                + $"{PoolPartViewModel.Format(plan.DestinationFreeBytes)} free. Free up space, or remove the drive and leave its files on it.");
+
+            return false;
+        }
+
+        return confirm(
+            "Move this drive's files off, then remove it?",
+            string.Create(
+                CultureInfo.CurrentCulture,
+                $"{plan.FileCount:N0} file(s), {PoolPartViewModel.Format(plan.TotalBytes)}, move from {part.DriveLetter} onto the pool's other drives.\n\n"
+                + $"Each file is copied whole and only then removed from this drive, so nothing is ever half-moved. "
+                + $"Files open in another program are left alone and the drive stays in the pool if any are.\n\n"
+                + $"This can take a while."),
+            "Move files and remove");
+    }
+
     private Task MountSelectedPoolAsync() =>
         RunPoolCommandAsync(
             Methods.PoolMount,
@@ -435,18 +612,45 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
             pool => new PoolReference { PoolId = pool.PoolId },
             "Unmounting…");
 
-    private Task RemoveSelectedPoolAsync() =>
-        RunPoolCommandAsync(
+    private async Task RemoveSelectedPoolAsync()
+    {
+        if (SelectedPool is not { } pool)
+        {
+            return;
+        }
+
+        if (ConfirmAction is { } confirm && !confirm(
+                $"Remove the pool '{pool.Name}'?",
+                $"{pool.MountPoint} disappears, but nothing on your drives is deleted.\n\n"
+                + "Every pooled file stays on the drive it is already on, in its pool part folder, in the same folders "
+                + "you see in the pool.",
+                "Remove pool"))
+        {
+            return;
+        }
+
+        await RunPoolCommandAsync(
             Methods.PoolRemove,
             // Pool parts stay on the drives: removing a pool must never delete anything.
-            pool => new RemovePoolRequest { PoolId = pool.PoolId, DeletePoolParts = false },
-            "Removing the pool (the files stay on the drives)…");
+            p => new RemovePoolRequest { PoolId = p.PoolId, DeletePoolParts = false },
+            "Removing the pool (the files stay on the drives)…").ConfigureAwait(true);
+    }
 
     private Task RebalanceAsync() =>
         RunPoolCommandAsync(
             Methods.RebalanceStart,
             pool => new PoolReference { PoolId = pool.PoolId },
             "Rebalancing in the background…");
+
+    private Task OpenSelectedPoolAsync()
+    {
+        if (SelectedPool is { IsMounted: true } pool)
+        {
+            OpenInExplorer?.Invoke(pool.MountPoint);
+        }
+
+        return Task.CompletedTask;
+    }
 
     private async Task RunPoolCommandAsync(string method, Func<PoolViewModel, object> payload, string busyMessage)
     {
@@ -473,6 +677,44 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
         {
             IsBusy = false;
         }
+    }
+
+    private void ClearDriveSelection()
+    {
+        foreach (var drive in Drives)
+        {
+            drive.IsSelected = false;
+        }
+    }
+
+    private void RaiseCommandStates()
+    {
+        Raise(nameof(CanAddDrives));
+        Raise(nameof(CanRemoveDrive));
+        Raise(nameof(AddDrivesLabel));
+
+        MountCommand.RaiseCanExecuteChanged();
+        UnmountCommand.RaiseCanExecuteChanged();
+        RemovePoolCommand.RaiseCanExecuteChanged();
+        RebalanceCommand.RaiseCanExecuteChanged();
+        AddDrivesCommand.RaiseCanExecuteChanged();
+        DetachDriveCommand.RaiseCanExecuteChanged();
+        EvacuateDriveCommand.RaiseCanExecuteChanged();
+        OpenPoolCommand.RaiseCanExecuteChanged();
+    }
+
+    /// <summary>One line describing the whole system, for the tray tooltip.</summary>
+    private void AnnounceStatus()
+    {
+        var summary = !IsConnected
+            ? "MergePool — service not reachable"
+            : Pools.Count == 0
+                ? "MergePool — no pools yet"
+                : string.Create(
+                    CultureInfo.CurrentCulture,
+                    $"MergePool — {Pools.Count} pool(s), {Pools.Count(p => p.Health == "Degraded")} degraded");
+
+        StatusChanged?.Invoke(this, summary);
     }
 
     public async ValueTask DisposeAsync()

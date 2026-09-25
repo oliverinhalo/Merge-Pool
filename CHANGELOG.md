@@ -12,6 +12,49 @@ change:
 - **Config schema** — `config.json` `schemaVersion`, migrated forward only, backed up first,
   unknown fields preserved.
 
+## [0.3.0] - 2026-09-25
+
+Data format: unchanged. Config schema: unchanged — `updates` and `ui` sections are added with
+defaults, and a 0.2.0 build reads the file without migrating.
+
+### Added
+
+- **MergePool updates itself.** The service checks the repository's releases on a timer, downloads
+  the new version's package, verifies its published SHA-256, unpacks it into its own
+  `versions\{version}` folder and hands off to the updater to repoint `current`. Nothing existing
+  is written: the running version, every pool part and `config.json` are untouched, and a version
+  that does not come up healthy is rolled back automatically. Checking and installing can each be
+  turned off, and either can be run by hand from the window.
+- **A drive can leave a pool**, two ways. *Remove, keep files on it* forgets the drive: its
+  `.PoolPart-{GUID}` folder and every file in it stay on the drive as ordinary files. *Move files
+  off, then remove* moves the pool's content onto the remaining drives first, one whole file at a
+  time, and only removes the drive once it is empty — refusing up front if the others have no room,
+  leaving files another program has open where they are, and keeping the drive in the pool if
+  anything could not be moved.
+- **Pool usage is measured, not inferred.** A pool now reports what it is holding and what it can
+  hold — its own content plus the free space on its drives — separately from what those drives are
+  using in total. Each drive shows the same split. The mounted volume reports the pool's ceiling
+  rather than the drives' combined size, so Explorer stops counting space that other files already
+  took and the pool can never use.
+- **The window lives in the notification area.** Closing it hides it rather than quitting, a second
+  launch raises the window that is already running, and it can open at sign-in (in the notification
+  area, not in your face). The service has always started on its own and mounts the pools whether or
+  not any window is open.
+- **A settings tab**: how much placement leans on speed against free space, how much room to keep
+  clear, how far below its own normal a drive has to fall before it is parked, and how hard the
+  background rebalancer may work — each as something a person can reason about rather than a raw
+  number. Plus update preferences, start-up, and a "Your files" tab that says where the data
+  actually lives and what each operation does to it.
+- `installer\package.ps1` and a release workflow: tagging `v0.3.0` publishes the package the
+  in-app updater downloads, its checksum, and the setup executable for a first install.
+
+### Changed
+
+- The window was rebuilt on a real design system: tokens and control styles in one place, two
+  palettes, and the window following whichever one Windows is set to.
+- Wire protocol 3 with capabilities `usage`, `driveRemoval` and `autoUpdate`. `MinimumSupported`
+  stays at 1, so a UI built against any earlier protocol keeps working.
+
 ## [0.2.0] - 2026-09-25
 
 Data format: unchanged. Config schema: unchanged — a pool simply gains another drive entry, which a

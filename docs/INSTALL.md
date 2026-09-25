@@ -37,7 +37,7 @@ one.
 
 ### 2. Install
 
-1. Download `MergePool-0.2.0-setup.exe`.
+1. Download `MergePool-0.3.0-setup.exe`.
 2. Run it and accept the UAC prompt.
 3. If WinFsp is missing, setup downloads and installs it before continuing. This needs an internet
    connection. If the download fails, setup tells you so and stops — install WinFsp yourself from
@@ -119,11 +119,60 @@ The one precaution worth taking is the ordinary one: MergePool is not a backup, 
 does not make them redundant. If a drive dies, the files that were on it are gone — from the pool
 and from the drive alike. Keep a backup of anything irreplaceable, whether or not it is pooled.
 
-### 4. Where MergePool puts things
+#### Taking a drive back out of a pool
+
+Select the pool, select the drive inside it, and choose one of two buttons. Both are safe; they
+differ in where the files end up.
+
+**Remove, keep files on it.** The drive leaves the pool immediately. Nothing is deleted, nothing is
+moved, nothing is copied. Its `.PoolPart-{GUID}` folder and every file in it stay on the drive as
+ordinary files — they simply stop appearing in the pool. Use this when you want the drive back and
+are happy for its files to go with it.
+
+**Move files off, then remove.** MergePool first moves the pool's content from that drive onto the
+pool's other drives, and only removes the drive once it is actually empty. Before anything moves it
+tells you how many files and how many bytes that is, and it refuses outright if the remaining drives
+do not have room. Each file is copied whole to its new drive and flushed before the original is
+removed, so a file is never half-moved and never split. A file another program has open is left
+exactly where it is, and if any are, the drive **stays in the pool** and MergePool says which —
+close them and try again. Use this when you want the drive back but the files should stay in the
+pool.
+
+The last drive in a pool cannot be removed this way. Remove the pool instead, which also leaves
+every file on its drive.
+
+### 4. Staying up to date
+
+**After this first install, MergePool updates itself.** The service checks for new releases a few
+times a day, downloads the new version, and installs it. You do not have to do anything, and you
+will not be asked to run a setup program again.
+
+What "installs it" means here is deliberately small. The new version is unpacked into its own folder
+(`versions\0.4.0` beside `versions\0.3.0`), and a single link called `current` is switched to point
+at it. Nothing is overwritten. Your `config.json` lives outside the program folder entirely and is
+not read or written by an update. **No pooled file is touched at any point** — an update has no
+reason to open one and never does. If the new version does not come up healthy, the link is switched
+straight back to the version that was working, and your pools come back with it.
+
+The service restarts as part of this, so pools are unmounted and remounted. Anything mid-write is
+flushed by the drain first; a copy in progress through Explorer may report an interruption, the same
+as it would if the drive were briefly unplugged.
+
+In **Settings → Updates and start-up** you can:
+
+- turn off automatic checks,
+- keep checks but be asked before installing,
+- check or install right now, and
+- see which versions are on disk. Old ones are kept so a rollback stays possible.
+
+If you would rather do it by hand, the releases page has a setup executable as well; running it
+upgrades an existing install in place.
+
+### 5. Where MergePool puts things
 
 | Path | What it is |
 | --- | --- |
-| `C:\Program Files\MergePool\versions\0.2.0\` | The program files for one version |
+| `C:\Program Files\MergePool\versions\0.3.0\` | The program files for one version |
 | `C:\Program Files\MergePool\current` | A junction pointing at the version in use |
 | `C:\ProgramData\MergePool\config.json` | Your pools and settings. Deliberately outside the program folder so updates never disturb it |
 | `<each pooled drive>\.PoolPart-{GUID}\` | Your pooled files, as ordinary files in the same folder structure you see in the pool |
@@ -133,7 +182,7 @@ movies, with normal names, permissions and timestamps. No database, no container
 format. If MergePool is uninstalled, or the machine dies and you put the drive in another PC, the
 files are still there and still readable.
 
-### 5. Updating
+### 6. Updating by hand
 
 Run the newer installer. It stops the service, installs the new version **alongside** the old one,
 and points `current` at it. Your configuration and your pooled files are untouched.
@@ -142,7 +191,7 @@ To upgrade or roll back by hand:
 
 ```powershell
 # Run from an elevated PowerShell
-& "C:\Program Files\MergePool\current\MergePool.Updater.exe" --version 0.2.0
+& "C:\Program Files\MergePool\current\MergePool.Updater.exe" --version 0.3.0
 ```
 
 The updater drains the pools, stops the service, swaps `current`, restarts, and health-checks the
@@ -150,7 +199,7 @@ new version. **If the new version does not come up healthy, it puts the old one 
 that your pools are serving again.** Exit codes: `0` success, `1` rolled back, `3` the rollback
 also failed and the machine needs attention.
 
-### 6. Uninstalling
+### 7. Uninstalling
 
 Uninstall MergePool from **Settings → Apps** as usual. It stops and removes the service and deletes
 the program folder.
@@ -161,7 +210,7 @@ then delete the empty folder.
 
 WinFsp is left installed; remove it separately if you want it gone.
 
-### 7. If something goes wrong
+### 8. If something goes wrong
 
 **The pool drive letter does not appear**
 
@@ -197,6 +246,22 @@ repairing.
 MergePool measured that drive writing far slower than it normally does — typically an SMR disk whose
 cache is full, a USB enclosure, or a drive that is overheating. New files go to the other drives
 until it recovers, which it does automatically. This is informational, not an error.
+
+**MergePool's window disappeared**
+
+Closing the window does not quit MergePool — it hides in the notification area, next to the clock,
+so your pools keep being managed without a window in the way. Click its icon there to bring it back,
+or use **Quit** on its menu to close it properly. Either way the service keeps the pools mounted;
+the window is only a view onto it.
+
+**An update failed**
+
+The version that was working is still running: an update that does not come up healthy is rolled
+back automatically, and the previous version's files were never touched. Settings → Updates shows
+what went wrong and which versions are on disk. A failed version is not retried on every check.
+
+If the download keeps failing, the machine may not be able to reach GitHub. Turning off automatic
+checks stops MergePool trying, and you can install by hand from the releases page whenever you like.
 
 **Where are the logs?**
 

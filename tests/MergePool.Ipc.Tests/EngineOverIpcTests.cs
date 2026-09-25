@@ -557,4 +557,226 @@ public sealed class EngineOverIpcTests : IAsyncLifetime
 
         Assert.True(client.Supports(Capabilities.PoolEdit));
     }
+
+    [Fact]
+    public async Task A_drive_can_leave_a_pool_with_its_files_left_on_it()
+    {
+        var first = AddDrive("One");
+        var second = AddDrive("Two");
+        await using var client = await ConnectAsync();
+
+        var pool = await client.InvokeAsync<PoolDto>(
+            Methods.PoolCreate,
+            new CreatePoolRequest
+            {
+                Name = "Media",
+                MountPoint = "P:",
+                VolumeIds = [first.ToVolumePath(), second.ToVolumePath()],
+            },
+            CancellationToken.None);
+
+        var leaving = pool.Parts.Single(part => part.Label == "Two");
+        var partRoot = Path.Combine(_root, "Two", ".PoolPart-" + leaving.PartId.ToString("D"));
+        File.WriteAllText(Path.Combine(partRoot, "keepme.txt"), "precious");
+
+        var result = await client.InvokeAsync<DriveRemovalResultDto>(
+            Methods.PoolRemoveDrive,
+            new RemoveDriveRequest { PoolId = pool.PoolId, VolumeId = second.ToVolumePath() },
+            CancellationToken.None);
+
+        Assert.True(result.Removed);
+        Assert.False(result.MovedFilesOff);
+        Assert.False(result.PartFolderRemoved);
+        Assert.Single(result.Pool!.Parts);
+
+        // Nothing was deleted: the file is still on the drive, in the same place.
+        Assert.Equal("precious", File.ReadAllText(Path.Combine(partRoot, "keepme.txt")));
+    }
+
+    [Fact]
+    public async Task A_drive_can_leave_safely_with_its_files_moved_onto_the_others()
+    {
+        var first = AddDrive("One", total: 10_000, free: 9_000);
+        var second = AddDrive("Two", total: 10_000, free: 9_000);
+        await using var client = await ConnectAsync();
+
+        var pool = await client.InvokeAsync<PoolDto>(
+            Methods.PoolCreate,
+            new CreatePoolRequest
+            {
+                Name = "Media",
+                MountPoint = "P:",
+                VolumeIds = [first.ToVolumePath(), second.ToVolumePath()],
+            },
+            CancellationToken.None);
+
+        var leaving = pool.Parts.Single(part => part.Label == "Two");
+        var staying = pool.Parts.Single(part => part.Label == "One");
+        var leavingRoot = Path.Combine(_root, "Two", ".PoolPart-" + leaving.PartId.ToString("D"));
+        Directory.CreateDirectory(Path.Combine(leavingRoot, "Movies"));
+        File.WriteAllText(Path.Combine(leavingRoot, "Movies", "film.mkv"), "irreplaceable");
+
+        var plan = await client.InvokeAsync<DriveRemovalPlanResult>(
+            Methods.PoolPlanDriveRemoval,
+            new RemoveDriveRequest { PoolId = pool.PoolId, VolumeId = second.ToVolumePath(), MoveFilesOff = true },
+            CancellationToken.None);
+
+        Assert.True(plan.Fits);
+        Assert.Equal(1, plan.FileCount);
+
+        var result = await client.InvokeAsync<DriveRemovalResultDto>(
+            Methods.PoolRemoveDrive,
+            new RemoveDriveRequest { PoolId = pool.PoolId, VolumeId = second.ToVolumePath(), MoveFilesOff = true },
+            CancellationToken.None);
+
+        Assert.True(result.Removed);
+        Assert.Equal(1, result.MovedCount);
+        Assert.Empty(result.Failed);
+        Assert.Single(result.Pool!.Parts);
+
+        // The file is on the drive that stayed, whole, and the emptied part folder is gone.
+        var stayingRoot = Path.Combine(_root, "One", ".PoolPart-" + staying.PartId.ToString("D"));
+        Assert.Equal("irreplaceable", File.ReadAllText(Path.Combine(stayingRoot, "Movies", "film.mkv")));
+        Assert.True(result.PartFolderRemoved);
+        Assert.False(Directory.Exists(leavingRoot));
+    }
+
+    [Fact]
+    public async Task A_safe_removal_that_does_not_fit_is_refused_before_anything_moves()
+    {
+        var first = AddDrive("One", total: 10_000, free: 4);
+        var second = AddDrive("Two", total: 10_000, free: 9_000);
+        await using var client = await ConnectAsync();
+
+        var pool = await client.InvokeAsync<PoolDto>(
+            Methods.PoolCreate,
+            new CreatePoolRequest
+            {
+                Name = "Media",
+                MountPoint = "P:",
+                VolumeIds = [first.ToVolumePath(), second.ToVolumePath()],
+            },
+            CancellationToken.None);
+
+        var leaving = pool.Parts.Single(part => part.Label == "Two");
+        var leavingRoot = Path.Combine(_root, "Two", ".PoolPart-" + leaving.PartId.ToString("D"));
+        File.WriteAllText(Path.Combine(leavingRoot, "big.bin"), new string('x', 500));
+
+        var failure = await Assert.ThrowsAsync<IpcException>(() =>
+            client.InvokeAsync<DriveRemovalResultDto>(
+                Methods.PoolRemoveDrive,
+                new RemoveDriveRequest { PoolId = pool.PoolId, VolumeId = second.ToVolumePath(), MoveFilesOff = true },
+                CancellationToken.None));
+
+        Assert.Equal(IpcErrorCodes.Conflict, failure.Code);
+
+        // The drive is still in the pool and its file has not moved.
+        var unchanged = await client.InvokeAsync<PoolDto>(
+            Methods.PoolStatus, new PoolReference { PoolId = pool.PoolId }, CancellationToken.None);
+        Assert.Equal(2, unchanged.Parts.Count);
+        Assert.True(File.Exists(Path.Combine(leavingRoot, "big.bin")));
+    }
+
+    [Fact]
+    public async Task Removing_a_drive_that_is_not_in_the_pool_is_a_not_found()
+    {
+        var first = AddDrive("One");
+        var stranger = AddDrive("Stranger");
+        await using var client = await ConnectAsync();
+
+        var pool = await client.InvokeAsync<PoolDto>(
+            Methods.PoolCreate,
+            new CreatePoolRequest { Name = "Media", MountPoint = "P:", VolumeIds = [first.ToVolumePath()] },
+            CancellationToken.None);
+
+        var failure = await Assert.ThrowsAsync<IpcException>(() =>
+            client.InvokeAsync<DriveRemovalResultDto>(
+                Methods.PoolRemoveDrive,
+                new RemoveDriveRequest { PoolId = pool.PoolId, VolumeId = stranger.ToVolumePath() },
+                CancellationToken.None));
+
+        Assert.Equal(IpcErrorCodes.NotFound, failure.Code);
+    }
+
+    [Fact]
+    public async Task A_pool_reports_what_it_holds_separately_from_what_its_drives_hold()
+    {
+        var volume = AddDrive("One", total: 1_000, free: 400);
+        await using var client = await ConnectAsync();
+
+        var pool = await client.InvokeAsync<PoolDto>(
+            Methods.PoolCreate,
+            new CreatePoolRequest { Name = "Media", MountPoint = "P:", VolumeIds = [volume.ToVolumePath()] },
+            CancellationToken.None);
+
+        var partRoot = Path.Combine(_root, "One", ".PoolPart-" + pool.Parts[0].PartId.ToString("D"));
+        File.WriteAllText(Path.Combine(partRoot, "pooled.bin"), new string('x', 120));
+
+        _engine.Tick();
+
+        var measured = await client.InvokeAsync<PoolDto>(
+            Methods.PoolStatus, new PoolReference { PoolId = pool.PoolId }, CancellationToken.None);
+
+        Assert.True(measured.IsUsageMeasured);
+        Assert.Equal(120, measured.PoolUsedBytes);
+        Assert.Equal(1, measured.PoolFileCount);
+
+        // The drive is 600 used of 1000, but the pool's own ceiling is its 120 bytes plus the 400
+        // that are actually free.
+        Assert.Equal(1_000, measured.TotalBytes);
+        Assert.Equal(520, measured.PoolCapacityBytes);
+        Assert.Equal(480, measured.ForeignBytes);
+        Assert.Equal(120, measured.Parts[0].PoolBytes);
+    }
+
+    [Fact]
+    public async Task Update_status_says_so_when_there_is_nothing_to_update_from()
+    {
+        await using var client = await ConnectAsync();
+
+        var status = await client.InvokeAsync<UpdateStatusResult>(
+            Methods.UpdateStatus, null, CancellationToken.None);
+
+        // No install layout in a test run, so the engine is honest about it rather than failing.
+        Assert.Equal("Unavailable", status.Stage);
+        Assert.False(status.UpdateAvailable);
+        Assert.NotNull(status.LastError);
+    }
+
+    [Fact]
+    public async Task Update_preferences_are_stored_and_survive_a_restart()
+    {
+        await using (var client = await ConnectAsync())
+        {
+            var status = await client.InvokeAsync<UpdateStatusResult>(
+                Methods.UpdateSetOptions,
+                new UpdateSettingsDto { AutomaticInstall = false, CheckIntervalHours = 12 },
+                CancellationToken.None);
+
+            Assert.False(status.AutomaticInstall);
+            Assert.Equal(12, status.CheckIntervalHours);
+        }
+
+        using var restarted = new PoolEngine(new PoolEngineOptions
+        {
+            ConfigStore = new ConfigStore(Path.Combine(_root, "config.json")),
+            VolumeProvider = _volumes,
+            MountService = new InMemoryMountService(),
+        });
+
+        Assert.False(restarted.Config.Updates.AutomaticInstall);
+        Assert.Equal(12, restarted.Config.Updates.CheckIntervalHours);
+        Assert.True(restarted.Config.Updates.AutomaticChecks);
+    }
+
+    [Fact]
+    public async Task Growing_and_shrinking_a_pool_are_announced_as_capabilities()
+    {
+        await using var client = await ConnectAsync();
+
+        Assert.True(client.Supports(Capabilities.PoolEdit));
+        Assert.True(client.Supports(Capabilities.DriveRemoval));
+        Assert.True(client.Supports(Capabilities.Usage));
+        Assert.True(client.Supports(Capabilities.AutoUpdate));
+    }
 }

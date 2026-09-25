@@ -30,6 +30,16 @@ public sealed record PoolPart
 
     public long FreeBytes { get; init; }
 
+    /// <summary>
+    /// Bytes the pool itself holds on this drive, or <c>null</c> until it has been measured. This is
+    /// not <c>TotalBytes - FreeBytes</c>: the difference is everything on the drive that is not
+    /// pooled.
+    /// </summary>
+    public long? PoolBytes { get; init; }
+
+    /// <summary>Files the pool holds on this drive, or <c>null</c> until measured.</summary>
+    public int? PoolFileCount { get; init; }
+
     /// <summary>Relative speed of this drive, 1.0 being the nominal baseline. Feeds placement scoring.</summary>
     public double SpeedFactor { get; init; } = 1.0;
 
@@ -39,6 +49,18 @@ public sealed record PoolPart
     public string Label { get; init; } = string.Empty;
 
     public char? DriveLetter { get; init; }
+
+    /// <summary>What the drive is using in total, pooled or not.</summary>
+    public long DriveUsedBytes => Math.Max(0, TotalBytes - FreeBytes);
+
+    /// <summary>What is on the drive but outside the pool. Null while the pool's own usage is unknown.</summary>
+    public long? ForeignBytes => PoolBytes is { } pooled ? Math.Max(0, DriveUsedBytes - pooled) : null;
+
+    /// <summary>
+    /// The space this drive contributes to the pool: what the pool already holds here, plus what is
+    /// still free. Space taken by files outside the pool is not the pool's to offer.
+    /// </summary>
+    public long PoolCapacityBytes => PoolBytes is { } pooled ? pooled + FreeBytes : TotalBytes;
 
     public bool IsOnline => State is not PoolPartState.Offline && RootPath is not null;
 
