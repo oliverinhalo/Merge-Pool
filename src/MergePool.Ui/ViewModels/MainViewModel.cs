@@ -594,9 +594,9 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
             string.Create(
                 CultureInfo.CurrentCulture,
                 $"{plan.FileCount:N0} file(s), {PoolPartViewModel.Format(plan.TotalBytes)}, move from {part.DriveLetter} onto the pool's other drives.\n\n"
-                + "Each file is copied whole and only then removed from this drive, so nothing is ever half-moved. "
-                + "Files open in another program are left alone and the drive stays in the pool if any are.\n\n"
-                + "This can take a while."),
+                + $"Each file is copied whole and only then removed from this drive, so nothing is ever half-moved. "
+                + $"Files open in another program are left alone and the drive stays in the pool if any are.\n\n"
+                + $"This can take a while."),
             "Move files and remove");
     }
 
