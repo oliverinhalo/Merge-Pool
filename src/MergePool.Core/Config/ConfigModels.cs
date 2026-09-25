@@ -28,6 +28,9 @@ public sealed class MergePoolConfig
     [JsonPropertyName("ui")]
     public UiOptions Ui { get; set; } = new();
 
+    [JsonPropertyName("web")]
+    public WebOptions Web { get; set; } = new();
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement> AdditionalData { get; set; } = [];
 }
@@ -236,6 +239,74 @@ public sealed class UpdateOptions
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement> AdditionalData { get; set; } = [];
+}
+
+/// <summary>Who can reach the web interface.</summary>
+public enum WebAccessScope
+{
+    /// <summary>Only this computer, over the loopback address. Nothing on the network can connect.</summary>
+    ThisComputer = 0,
+
+    /// <summary>Any machine that can reach this one. Needs a firewall rule and the access token.</summary>
+    Network = 1,
+}
+
+/// <summary>
+/// The optional web interface: the same controls as the window, reachable from a browser on the
+/// network.
+/// </summary>
+/// <remarks>
+/// Off by default, and bound to this computer only until that is explicitly changed — MergePool can
+/// move and delete nothing, but it can unmount a pool and move files between drives, so it is not
+/// something to put on a network by accident. Every request must carry the access token.
+/// </remarks>
+public sealed class WebOptions
+{
+    /// <summary>Lowest port that is not in the well-known range.</summary>
+    public const int MinimumPort = 1024;
+
+    public const int MaximumPort = 65535;
+
+    public const int DefaultPort = 8787;
+
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; set; }
+
+    [JsonPropertyName("port")]
+    public int Port { get; set; } = DefaultPort;
+
+    /// <summary>One of <see cref="WebAccessScope"/>. Stored as a name so the file stays readable.</summary>
+    [JsonPropertyName("scope")]
+    public string Scope { get; set; } = nameof(WebAccessScope.ThisComputer);
+
+    /// <summary>
+    /// Shared secret every request must present. Generated when the interface is first turned on;
+    /// changing it signs every browser out.
+    /// </summary>
+    [JsonPropertyName("accessToken")]
+    public string AccessToken { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Whether the browser may change anything. Off means it can look but not mount, unmount,
+    /// rebalance or touch drives.
+    /// </summary>
+    [JsonPropertyName("allowChanges")]
+    public bool AllowChanges { get; set; } = true;
+
+    /// <summary>Open the port in Windows Firewall while the interface is on.</summary>
+    [JsonPropertyName("manageFirewallRule")]
+    public bool ManageFirewallRule { get; set; } = true;
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement> AdditionalData { get; set; } = [];
+
+    public WebAccessScope AccessScope =>
+        Enum.TryParse<WebAccessScope>(Scope, ignoreCase: true, out var scope)
+            ? scope
+            : WebAccessScope.ThisComputer;
+
+    /// <summary>A port outside the usable range, or one Windows reserves, is refused rather than bound.</summary>
+    public static bool IsUsablePort(int port) => port is >= MinimumPort and <= MaximumPort;
 }
 
 /// <summary>Preferences that belong to the window rather than the engine.</summary>

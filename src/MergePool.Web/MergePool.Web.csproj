@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>MergePool.Web</RootNamespace>
+    <AssemblyName>MergePool.Web</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      The page is served from the assembly, so there is no content directory to keep in step with
+      the binaries, and an upgrade cannot leave a new server serving an old page.
+    -->
+    <EmbeddedResource Include="Assets\**\*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MergePool.Core\MergePool.Core.csproj" />
+    <ProjectReference Include="..\MergePool.Engine\MergePool.Engine.csproj" />
+  </ItemGroup>
+
+</Project>

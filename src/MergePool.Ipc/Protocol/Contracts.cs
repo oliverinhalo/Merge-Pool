@@ -384,6 +384,66 @@ public sealed class UpdateSettingsDto : IpcContract
     public double? CheckIntervalHours { get; set; }
 }
 
+/// <summary>The web interface's settings and what it is actually doing. Protocol 4.</summary>
+public sealed class WebInterfaceResult : IpcContract
+{
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; set; }
+
+    [JsonPropertyName("port")]
+    public int Port { get; set; }
+
+    /// <summary>One of ThisComputer, Network.</summary>
+    [JsonPropertyName("scope")]
+    public string Scope { get; set; } = "ThisComputer";
+
+    [JsonPropertyName("accessToken")]
+    public string AccessToken { get; set; } = string.Empty;
+
+    [JsonPropertyName("allowChanges")]
+    public bool AllowChanges { get; set; } = true;
+
+    [JsonPropertyName("manageFirewallRule")]
+    public bool ManageFirewallRule { get; set; } = true;
+
+    /// <summary>One of Stopped, Listening, Failed — what the server is doing right now.</summary>
+    [JsonPropertyName("state")]
+    public string State { get; set; } = "Stopped";
+
+    /// <summary>The address to open in a browser, when something is listening.</summary>
+    [JsonPropertyName("url")]
+    public string? Url { get; set; }
+
+    /// <summary>Why the port could not be opened, when it could not.</summary>
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("requestCount")]
+    public int RequestCount { get; set; }
+
+    [JsonPropertyName("rejectedCount")]
+    public int RejectedCount { get; set; }
+}
+
+/// <summary>Web interface settings to change. Absent fields are left as they are. Protocol 4.</summary>
+public sealed class WebInterfaceSettingsDto : IpcContract
+{
+    [JsonPropertyName("enabled")]
+    public bool? Enabled { get; set; }
+
+    [JsonPropertyName("port")]
+    public int? Port { get; set; }
+
+    [JsonPropertyName("scope")]
+    public string? Scope { get; set; }
+
+    [JsonPropertyName("allowChanges")]
+    public bool? AllowChanges { get; set; }
+
+    [JsonPropertyName("manageFirewallRule")]
+    public bool? ManageFirewallRule { get; set; }
+}
+
 public sealed class ServiceStatusResult : IpcContract
 {
     [JsonPropertyName("serviceVersion")]

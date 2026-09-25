@@ -1,4 +1,5 @@
 using System.Globalization;
+using MergePool.Core.Config;
 using MergePool.Core.Model;
 using MergePool.Core.Placement;
 using MergePool.Core.Volumes;
@@ -13,7 +14,10 @@ namespace MergePool.Engine.Ipc;
 /// Exposes the engine over the named pipe. Every method is additive: once a name is answered here
 /// it keeps being answered, so an old UI is never left calling something that vanished.
 /// </summary>
-public sealed class EngineIpcHandler(PoolEngine engine, AutoUpdateService? updates = null) : IIpcMethodHandler
+public sealed class EngineIpcHandler(
+    PoolEngine engine,
+    AutoUpdateService? updates = null,
+    Func<WebInterfaceResult>? webStatus = null) : IIpcMethodHandler
 {
     private readonly PoolEngine _engine = engine ?? throw new ArgumentNullException(nameof(engine));
 
@@ -52,6 +56,9 @@ public sealed class EngineIpcHandler(PoolEngine engine, AutoUpdateService? updat
         IpcMethods.UpdateCheck,
         IpcMethods.UpdateApply,
         IpcMethods.UpdateSetOptions,
+        IpcMethods.WebGet,
+        IpcMethods.WebSet,
+        IpcMethods.WebRegenerateToken,
         IpcMethods.HealthCheck,
     ];
 
@@ -103,6 +110,9 @@ public sealed class EngineIpcHandler(PoolEngine engine, AutoUpdateService? updat
                 IpcMethods.UpgradeResume => Resume(call),
                 IpcMethods.UpdateStatus => Ok(id, UpdateStatus()),
                 IpcMethods.UpdateSetOptions => SetUpdateOptions(call),
+                IpcMethods.WebGet => Ok(id, WebInterface()),
+                IpcMethods.WebSet => SetWebOptions(call),
+                IpcMethods.WebRegenerateToken => RegenerateWebToken(call),
                 IpcMethods.HealthCheck => Ok(id, HealthCheck()),
                 _ => IpcResponse.Failure(id, IpcErrorCodes.MethodNotSupported, $"'{call.Request.Method}' is unknown."),
             };
@@ -429,6 +439,68 @@ public sealed class EngineIpcHandler(PoolEngine engine, AutoUpdateService? updat
 
         await _updates.ApplyAsync(cancellationToken).ConfigureAwait(false);
         return Ok(call.Request.Id, UpdateStatus());
+    }
+
+    /// <summary>
+    /// The settings as stored, merged with what the server is actually doing. Without a host to ask,
+    /// the settings still come back — the UI can then show them as saved but not running.
+    /// </summary>
+    private WebInterfaceResult WebInterface()
+    {
+        var options = _engine.Config.Web;
+        var live = webStatus?.Invoke();
+
+        return new WebInterfaceResult
+        {
+            Enabled = options.Enabled,
+            Port = options.Port,
+            Scope = options.AccessScope.ToString(),
+            AccessToken = options.AccessToken,
+            AllowChanges = options.AllowChanges,
+            ManageFirewallRule = options.ManageFirewallRule,
+            State = live?.State ?? "Stopped",
+            Url = live?.Url,
+            Error = live?.Error,
+            RequestCount = live?.RequestCount ?? 0,
+            RejectedCount = live?.RejectedCount ?? 0,
+        };
+    }
+
+    private IpcResponse SetWebOptions(IpcCall call)
+    {
+        var request = call.PayloadAs<WebInterfaceSettingsDto>();
+
+        if (request.Port is { } port && !WebOptions.IsUsablePort(port))
+        {
+            return IpcResponse.Failure(
+                call.Request.Id,
+                IpcErrorCodes.InvalidRequest,
+                $"Port {port} is outside the usable range {WebOptions.MinimumPort}-{WebOptions.MaximumPort}.");
+        }
+
+        if (request.Scope is { } scope && !Enum.TryParse<WebAccessScope>(scope, ignoreCase: true, out _))
+        {
+            return IpcResponse.Failure(
+                call.Request.Id, IpcErrorCodes.InvalidRequest, $"'{scope}' is not a known access scope.");
+        }
+
+        _engine.UpdateWebOptions(options =>
+        {
+            options.Enabled = request.Enabled ?? options.Enabled;
+            options.Port = request.Port ?? options.Port;
+            options.Scope = request.Scope ?? options.Scope;
+            options.AllowChanges = request.AllowChanges ?? options.AllowChanges;
+            options.ManageFirewallRule = request.ManageFirewallRule ?? options.ManageFirewallRule;
+        });
+
+        return Ok(call.Request.Id, WebInterface());
+    }
+
+    private IpcResponse RegenerateWebToken(IpcCall call)
+    {
+        // Every browser holding the old token is signed out the moment this lands.
+        _engine.UpdateWebOptions(options => options.AccessToken = string.Empty);
+        return Ok(call.Request.Id, WebInterface());
     }
 
     private IpcResponse SetUpdateOptions(IpcCall call)
