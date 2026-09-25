@@ -4,12 +4,19 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
+    <!-- Only for NotifyIcon: WPF has no notification-area API of its own. -->
+    <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>MergePool.Ui</RootNamespace>
     <AssemblyName>MergePool</AssemblyName>
     <IsWindowsOnlyProject>true</IsWindowsOnlyProject>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\MergePool.ico</ApplicationIcon>
     <Platforms>AnyCPU;x64</Platforms>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\MergePool.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\MergePool.Ipc\MergePool.Ipc.csproj" />

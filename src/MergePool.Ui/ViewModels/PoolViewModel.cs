@@ -11,6 +11,8 @@ public sealed class PoolPartViewModel(PoolPartDto dto) : ViewModelBase
 
     public Guid PartId => _dto.PartId;
 
+    public string VolumeId => _dto.VolumeId;
+
     public string Label => string.IsNullOrWhiteSpace(_dto.Label) ? "(no label)" : _dto.Label;
 
     public string DriveLetter => string.IsNullOrEmpty(_dto.DriveLetter) ? "—" : _dto.DriveLetter + ":";
@@ -19,7 +21,21 @@ public sealed class PoolPartViewModel(PoolPartDto dto) : ViewModelBase
 
     public long FreeBytes => _dto.FreeBytes;
 
-    public double UsedFraction => _dto.TotalBytes <= 0 ? 0 : 1 - (_dto.FreeBytes / (double)_dto.TotalBytes);
+    /// <summary>What the pool holds here, which is not the same as what the drive holds.</summary>
+    public long PoolBytes => _dto.PoolBytes ?? 0;
+
+    public bool IsMeasured => _dto.PoolBytes is not null;
+
+    public long DriveUsedBytes => Math.Max(0, _dto.TotalBytes - _dto.FreeBytes);
+
+    /// <summary>Everything on this drive that is not in the pool.</summary>
+    public long ForeignBytes => Math.Max(0, DriveUsedBytes - PoolBytes);
+
+    /// <summary>How full the drive is, pooled or not. This is the drive's own story.</summary>
+    public double DriveUsedFraction => _dto.TotalBytes <= 0 ? 0 : DriveUsedBytes / (double)_dto.TotalBytes;
+
+    /// <summary>The pool's share of the drive, as a fraction of the whole drive.</summary>
+    public double PoolFraction => _dto.TotalBytes <= 0 ? 0 : PoolBytes / (double)_dto.TotalBytes;
 
     public bool IsOnline => _dto.State != "Offline";
 
@@ -53,6 +69,13 @@ public sealed class PoolPartViewModel(PoolPartDto dto) : ViewModelBase
         ? "—"
         : string.Create(CultureInfo.CurrentCulture, $"{_dto.LatencyMilliseconds:N1} ms");
 
+    /// <summary>Spells out the split, since "used" on a pooled drive means two different things.</summary>
+    public string UsageSummary => !IsMeasured
+        ? "Measuring what the pool holds here…"
+        : string.Create(
+            CultureInfo.CurrentCulture,
+            $"{Format(PoolBytes)} pooled · {Format(ForeignBytes)} other files · {Format(FreeBytes)} free");
+
     public void Update(PoolPartDto dto)
     {
         _dto = dto;
@@ -61,64 +84,132 @@ public sealed class PoolPartViewModel(PoolPartDto dto) : ViewModelBase
         Raise(nameof(DriveLetter));
         Raise(nameof(TotalBytes));
         Raise(nameof(FreeBytes));
-        Raise(nameof(UsedFraction));
+        Raise(nameof(PoolBytes));
+        Raise(nameof(IsMeasured));
+        Raise(nameof(DriveUsedBytes));
+        Raise(nameof(ForeignBytes));
+        Raise(nameof(DriveUsedFraction));
+        Raise(nameof(PoolFraction));
         Raise(nameof(IsOnline));
         Raise(nameof(IsThrottled));
         Raise(nameof(Status));
         Raise(nameof(Throughput));
         Raise(nameof(HealthRatio));
         Raise(nameof(Latency));
+        Raise(nameof(UsageSummary));
+    }
+
+    internal static string Format(long bytes)
+    {
+        string[] units = ["B", "KB", "MB", "GB", "TB", "PB"];
+        if (bytes <= 0)
+        {
+            return "0 B";
+        }
+
+        double size = bytes;
+        var unit = 0;
+        while (size >= 1024 && unit < units.Length - 1)
+        {
+            size /= 1024;
+            unit++;
+        }
+
+        return string.Create(CultureInfo.CurrentCulture, $"{size:N1} {units[unit]}");
     }
 }
 
-public sealed class PoolViewModel : ViewModelBase
+/// <summary>A pool as the window shows it.</summary>
+public sealed class PoolViewModel(PoolDto dto) : ViewModelBase
 {
-    private PoolDto _dto;
+    private PoolDto _dto = dto;
 
-    public PoolViewModel(PoolDto dto)
-    {
-        _dto = dto;
-        PoolId = dto.PoolId;
-        Update(dto);
-    }
-
-    public Guid PoolId { get; }
-
-    public ObservableCollection<PoolPartViewModel> Parts { get; } = [];
+    public Guid PoolId => _dto.PoolId;
 
     public string Name => _dto.Name;
 
-    public string MountPoint => string.IsNullOrEmpty(_dto.MountPoint) ? "(not mounted)" : _dto.MountPoint;
+    public string MountPoint => string.IsNullOrWhiteSpace(_dto.MountPoint) ? "not mounted" : _dto.MountPoint;
 
     public bool IsMounted => _dto.IsMounted;
 
+    public string Health => _dto.Health;
+
+    /// <summary>The drives' combined size, including everything on them that is not pooled.</summary>
     public long TotalBytes => _dto.TotalBytes;
 
     public long FreeBytes => _dto.FreeBytes;
 
-    public double UsedFraction => _dto.TotalBytes <= 0 ? 0 : 1 - (_dto.FreeBytes / (double)_dto.TotalBytes);
+    /// <summary>What the pool itself holds.</summary>
+    public long PoolUsedBytes => _dto.PoolUsedBytes;
 
-    public string Health => _dto.Health;
+    /// <summary>What the pool can hold: its own content plus free space on its drives.</summary>
+    public long PoolCapacityBytes => _dto.PoolCapacityBytes > 0 ? _dto.PoolCapacityBytes : _dto.TotalBytes;
 
-    /// <summary>A degraded pool still works; the wording has to say so rather than alarm.</summary>
-    public string HealthSummary => _dto.Health switch
-    {
-        "Healthy" => "All drives present",
-        "Degraded" => string.Create(
+    public long ForeignBytes => _dto.ForeignBytes;
+
+    public int PoolFileCount => _dto.PoolFileCount;
+
+    public bool IsMeasured => _dto.IsUsageMeasured;
+
+    /// <summary>
+    /// How full the pool is against its own ceiling — not against the drives' raw size, which would
+    /// count space that other files have already taken and the pool can never use.
+    /// </summary>
+    public double PoolUsedFraction =>
+        PoolCapacityBytes <= 0 ? 0 : Math.Clamp(PoolUsedBytes / (double)PoolCapacityBytes, 0, 1);
+
+    /// <summary>How full the pool's drives are overall, pooled content and everything else.</summary>
+    public double DriveUsedFraction =>
+        TotalBytes <= 0 ? 0 : Math.Clamp((TotalBytes - FreeBytes) / (double)TotalBytes, 0, 1);
+
+    public string PoolUsageText => IsMeasured
+        ? string.Create(
             CultureInfo.CurrentCulture,
-            $"{_dto.Parts.Count(p => p.State == "Offline")} of {_dto.Parts.Count} drives missing — the rest keep serving"),
-        _ => "No drives available",
-    };
+            $"{PoolPartViewModel.Format(PoolUsedBytes)} of {PoolPartViewModel.Format(PoolCapacityBytes)} used by this pool")
+        : "Measuring what the pool holds…";
 
-    public bool IsDegraded => _dto.Health == "Degraded";
+    public string DriveUsageText => string.Create(
+        CultureInfo.CurrentCulture,
+        $"{PoolPartViewModel.Format(TotalBytes - FreeBytes)} of {PoolPartViewModel.Format(TotalBytes)} used on these drives in total");
 
-    public bool IsOffline => _dto.Health == "Offline";
+    public string FileCountText => IsMeasured
+        ? string.Create(CultureInfo.CurrentCulture, $"{PoolFileCount:N0} file(s) in the pool")
+        : "—";
+
+    public string HealthSummary
+    {
+        get
+        {
+            var missing = _dto.Parts.Count(part => part.State == "Offline");
+            var throttled = _dto.Parts.Count(part => part.IsThrottled);
+
+            if (missing > 0)
+            {
+                return string.Create(
+                    CultureInfo.CurrentCulture,
+                    $"Degraded — {missing} of {_dto.Parts.Count} drives missing. The rest keep serving, and a drive rejoins on its own.");
+            }
+
+            if (throttled > 0)
+            {
+                return string.Create(
+                    CultureInfo.CurrentCulture,
+                    $"Healthy — {throttled} drive(s) writing slower than usual, so new files are going elsewhere for now.");
+            }
+
+            return _dto.IsMounted
+                ? string.Create(CultureInfo.CurrentCulture, $"Healthy — {_dto.Parts.Count} drive(s), mounted at {MountPoint}.")
+                : "Healthy, but not mounted.";
+        }
+    }
+
+    public ObservableCollection<PoolPartViewModel> Parts { get; } =
+        [.. dto.Parts.Select(part => new PoolPartViewModel(part))];
 
     public void Update(PoolDto dto)
     {
         _dto = dto;
 
-        // Merge in place so the list does not flicker on every poll.
         foreach (var part in dto.Parts)
         {
             var existing = Parts.FirstOrDefault(p => p.PartId == part.PartId);
@@ -134,7 +225,7 @@ public sealed class PoolViewModel : ViewModelBase
 
         for (var i = Parts.Count - 1; i >= 0; i--)
         {
-            if (dto.Parts.All(p => p.PartId != Parts[i].PartId))
+            if (dto.Parts.All(part => part.PartId != Parts[i].PartId))
             {
                 Parts.RemoveAt(i);
             }
@@ -143,12 +234,19 @@ public sealed class PoolViewModel : ViewModelBase
         Raise(nameof(Name));
         Raise(nameof(MountPoint));
         Raise(nameof(IsMounted));
+        Raise(nameof(Health));
         Raise(nameof(TotalBytes));
         Raise(nameof(FreeBytes));
-        Raise(nameof(UsedFraction));
-        Raise(nameof(Health));
+        Raise(nameof(PoolUsedBytes));
+        Raise(nameof(PoolCapacityBytes));
+        Raise(nameof(ForeignBytes));
+        Raise(nameof(PoolFileCount));
+        Raise(nameof(IsMeasured));
+        Raise(nameof(PoolUsedFraction));
+        Raise(nameof(DriveUsedFraction));
+        Raise(nameof(PoolUsageText));
+        Raise(nameof(DriveUsageText));
+        Raise(nameof(FileCountText));
         Raise(nameof(HealthSummary));
-        Raise(nameof(IsDegraded));
-        Raise(nameof(IsOffline));
     }
 }
