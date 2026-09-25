@@ -92,7 +92,9 @@ public sealed class ServiceConnection : IAsyncDisposable
             }
             catch (IpcException exception)
             {
-                LastError = exception.Message;
+                LastError = string.IsNullOrWhiteSpace(exception.Error.Detail)
+                    ? exception.Message
+                    : $"{exception.Message} ({exception.Error.Detail})";
                 return null;
             }
             catch (Exception exception) when (exception is IOException or InvalidDataException or ObjectDisposedException)

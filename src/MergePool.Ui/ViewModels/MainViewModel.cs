@@ -188,6 +188,8 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
 
         if (drives is null)
         {
+            // Say so. An empty list with no message reads as "this machine has no drives".
+            ErrorMessage = _service.LastError ?? "MergePool could not read the drives on this machine.";
             return;
         }
 
@@ -234,6 +236,7 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
 
         if (pools is null)
         {
+            ErrorMessage = _service.LastError ?? "MergePool could not read the pools.";
             return;
         }
 

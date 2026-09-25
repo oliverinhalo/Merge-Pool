@@ -53,6 +53,16 @@ change:
   `InvariantGlobalization` was enabled for every project, and WPF needs real culture data to
   resolve the UI language. Removed, with a test that fails if it is ever set again — CI compiles
   the UI but never launches it, so nothing else would catch it.
+- The drive list came up empty on a real machine. A volume with no mount point — the EFI system
+  partition and the recovery partition, present on every modern Windows install — makes Windows
+  return just a null terminator, which was read back as the one-character path `"\0"` rather than
+  as "no mount point". `DriveInfo` then threw `ArgumentException`, which was not among the caught
+  types, so one hidden partition aborted the whole enumeration and every drive vanished.
+  The terminator is now read correctly, `ArgumentException` and `NotSupportedException` are caught,
+  and each volume is described in isolation so one unreadable volume cannot empty the list.
+- The UI showed that empty list with no explanation, which reads as "this machine has no drives".
+  A failed drive or pool refresh now shows the reason, and the service's underlying error message
+  is carried through instead of the generic "the service failed to handle the request".
 - The installer failed to compile: a Pascal `{ }` comment in the `[Code]` section contained
   `{app}`, and the `}` inside it closed the comment early, leaving the rest of the sentence to be
   parsed as code. All `[Code]` comments are now `//`, which cannot be ended by a brace. CI now

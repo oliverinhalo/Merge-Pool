@@ -18,7 +18,8 @@ public sealed class WindowsVolumeProvider : IVolumeProvider
         var handle = NativeMethods.FindFirstVolumeW(buffer, buffer.Capacity);
         if (handle == NativeMethods.InvalidHandle)
         {
-            return volumes;
+            throw new IOException(
+                $"Windows would not start a volume enumeration (error {Marshal.GetLastWin32Error()}).");
         }
 
         try
@@ -26,9 +27,22 @@ public sealed class WindowsVolumeProvider : IVolumeProvider
             do
             {
                 var volumeName = buffer.ToString();
-                if (VolumeId.TryParse(volumeName, out var id))
+
+                // A machine always has volumes we cannot describe — an unformatted partition, a
+                // BitLocker volume that is still locked, a card reader with no card. Skipping the
+                // one that fails keeps every other drive visible.
+                try
                 {
-                    volumes.Add(Describe(id, volumeName));
+                    if (VolumeId.TryParse(volumeName, out var id))
+                    {
+                        volumes.Add(Describe(id, volumeName));
+                    }
+                }
+                catch (Exception exception) when (exception is IOException
+                    or UnauthorizedAccessException
+                    or ArgumentException
+                    or NotSupportedException)
+                {
                 }
 
                 buffer.Clear();
@@ -77,12 +91,14 @@ public sealed class WindowsVolumeProvider : IVolumeProvider
                     free = drive.AvailableFreeSpace;
                 }
             }
-            catch (IOException)
+            catch (Exception exception) when (exception is IOException
+                or UnauthorizedAccessException
+                or ArgumentException
+                or NotSupportedException)
             {
-                ready = false;
-            }
-            catch (UnauthorizedAccessException)
-            {
+                // Present but not describable: a locked or unformatted volume, or one mounted
+                // somewhere DriveInfo will not accept. It still belongs in the list, just not as
+                // something poolable.
                 ready = false;
             }
         }
@@ -122,14 +138,7 @@ public sealed class WindowsVolumeProvider : IVolumeProvider
             return null;
         }
 
-        var first = new string(buffer);
-        var end = first.IndexOf('\0', StringComparison.Ordinal);
-        if (end > 0)
-        {
-            first = first[..end];
-        }
-
-        return string.IsNullOrWhiteSpace(first) ? null : first;
+        return VolumeMountPoints.First(buffer);
     }
 
     private static VolumeKind MapDriveType(uint driveType) => driveType switch
