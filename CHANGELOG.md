@@ -63,6 +63,11 @@ change:
 - The UI showed that empty list with no explanation, which reads as "this machine has no drives".
   A failed drive or pool refresh now shows the reason, and the service's underlying error message
   is carried through instead of the generic "the service failed to handle the request".
+- An upgrade could stop the MergePool service and never start it again. The installer stops a
+  running service before replacing its files, but starting it back up was gated on the optional
+  "start the service" task checkbox, so the engine was left down and the UI came up reporting that
+  the service could not be reached. An upgrade now always restarts the service it stopped, and
+  waits longer for the stop to release the files.
 - The installer failed to compile: a Pascal `{ }` comment in the `[Code]` section contained
   `{app}`, and the `}` inside it closed the comment early, leaving the rest of the sentence to be
   parsed as code. All `[Code]` comments are now `//`, which cannot be ended by a brace. CI now

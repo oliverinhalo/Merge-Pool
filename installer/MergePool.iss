@@ -69,7 +69,7 @@ Filename: "{sys}\sc.exe"; Parameters: "failure {#ServiceName} reset= 86400 actio
   Flags: runhidden waituntilterminated
 
 Filename: "{sys}\sc.exe"; Parameters: "start {#ServiceName}"; \
-  StatusMsg: "Starting the MergePool service…"; Flags: runhidden waituntilterminated; Tasks: startservice
+  StatusMsg: "Starting the MergePool service…"; Flags: runhidden waituntilterminated; Check: ShouldStartService
 
 Filename: "{app}\current\MergePool.exe"; Description: "Open MergePool"; \
   Flags: postinstall nowait skipifsilent
@@ -86,6 +86,9 @@ Type: filesandordirs; Name: "{app}\versions"
 [Code]
 var
   DownloadPage: TDownloadWizardPage;
+  // Set while installing: true when MergePool was already installed, i.e. this is an upgrade and
+  // PrepareToInstall stopped a service that has to be put back.
+  UpgradingExistingInstall: Boolean;
 
 function WinFspInstalled: Boolean;
 begin
@@ -114,12 +117,23 @@ procedure StopServiceIfRunning;
 var
   ResultCode: Integer;
 begin
-  if ServiceExists then
-  begin
-    // Stopping unmounts the pools cleanly. Nothing on the drives is touched.
-    Exec(ExpandConstant('{sys}\sc.exe'), 'stop {#ServiceName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-    Sleep(3000);
-  end;
+  UpgradingExistingInstall := ServiceExists;
+  if not UpgradingExistingInstall then
+    Exit;
+
+  // Stopping unmounts the pools cleanly. Nothing on the drives is touched.
+  Exec(ExpandConstant('{sys}\sc.exe'), 'stop {#ServiceName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+  // sc only asks the service to stop; give it time to release the files about to be replaced.
+  Sleep(5000);
+end;
+
+// An upgrade must put back the service it stopped. Leaving that to the task checkbox meant an
+// upgrade could stop the engine and never start it again, which looks exactly like MergePool
+// being broken: the UI comes up and says the service cannot be reached.
+function ShouldStartService: Boolean;
+begin
+  Result := UpgradingExistingInstall or WizardIsTaskSelected('startservice');
 end;
 
 // Repoints {app}\current at the version just installed. Built beside the old link and swapped, so
