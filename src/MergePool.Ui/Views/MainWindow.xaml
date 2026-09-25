@@ -453,6 +453,104 @@
                 </StackPanel>
                 <TextBlock Style="{StaticResource Caption}" Text="{Binding Settings.Message}" />
 
+                <TextBlock Text="WEB INTERFACE" Style="{StaticResource Subheading}" Margin="0,18,0,6" />
+                <Border Style="{StaticResource InsetCard}" Margin="0,0,0,16">
+                  <StackPanel>
+                    <CheckBox IsChecked="{Binding Web.Enabled, Mode=TwoWay}" Margin="0,0,0,12">
+                      <TextBlock TextWrapping="Wrap" FontSize="13"
+                                 Text="Control MergePool from a browser. The service does the serving, so it works whether or not this window is open." />
+                    </CheckBox>
+
+                    <Grid Margin="0,0,0,10">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="10" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+
+                      <StackPanel Grid.Column="0">
+                        <TextBlock Text="PORT" Style="{StaticResource Subheading}" />
+                        <TextBox Width="110" Text="{Binding Web.PortText, UpdateSourceTrigger=PropertyChanged}" />
+                      </StackPanel>
+
+                      <Button Grid.Column="2" Content="Use this port" VerticalAlignment="Bottom" MinWidth="112"
+                              Command="{Binding Web.ApplyPortCommand}" />
+                    </Grid>
+
+                    <TextBlock Style="{StaticResource Caption}" Text="{Binding Web.PortHint}" Margin="0,0,0,12" />
+
+                    <CheckBox IsChecked="{Binding Web.ReachableFromNetwork, Mode=TwoWay}" Margin="0,0,0,10">
+                      <TextBlock TextWrapping="Wrap" FontSize="13"
+                                 Text="Let other devices on my network reach it. Off means only this computer can connect." />
+                    </CheckBox>
+
+                    <CheckBox IsChecked="{Binding Web.AllowChanges, Mode=TwoWay}" Margin="0,0,0,10">
+                      <TextBlock TextWrapping="Wrap" FontSize="13"
+                                 Text="Let the browser make changes. Off means it can see the pools but not mount, unmount, rebalance or touch drives." />
+                    </CheckBox>
+
+                    <CheckBox IsChecked="{Binding Web.ManageFirewallRule, Mode=TwoWay}" Margin="0,0,0,14">
+                      <TextBlock TextWrapping="Wrap" FontSize="13"
+                                 Text="Open the port in Windows Firewall while this is on, and close it again afterwards." />
+                    </CheckBox>
+
+                    <!-- What it is doing right now, in its own words. -->
+                    <Border CornerRadius="{StaticResource ControlRadius}" Padding="11,9" Margin="0,0,0,12"
+                            Background="{DynamicResource SurfaceBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+                      <StackPanel>
+                        <TextBlock Text="{Binding Web.StateText}" TextWrapping="Wrap" FontSize="13"
+                                   Foreground="{DynamicResource TextBrush}" />
+                        <TextBlock Style="{StaticResource Caption}" Margin="0,4,0,0"
+                                   Text="{Binding Web.TrafficText}"
+                                   Visibility="{Binding Web.IsListening, Converter={StaticResource BoolToVisibility}}" />
+                      </StackPanel>
+                    </Border>
+
+                    <TextBlock Text="ACCESS TOKEN" Style="{StaticResource Subheading}" />
+                    <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,6"
+                               Text="A browser has to present this to see or change anything. Type it in once on the sign-in page." />
+
+                    <Border CornerRadius="{StaticResource ControlRadius}" Padding="10,8" Margin="0,0,0,10"
+                            Background="{DynamicResource SurfaceBrush}"
+                            BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1">
+                      <TextBlock Text="{Binding Web.DisplayedToken}" Style="{StaticResource Numeric}"
+                                 FontSize="13" TextWrapping="Wrap"
+                                 Foreground="{DynamicResource TextBrush}" />
+                    </Border>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                      <CheckBox IsChecked="{Binding Web.IsTokenVisible, Mode=TwoWay}" Content="Show"
+                                VerticalAlignment="Center" Margin="0,0,14,0" />
+                      <Button Content="Copy token" MinWidth="104" Margin="0,0,6,0"
+                              Command="{Binding Web.CopyTokenCommand}" />
+                      <Button Content="New token" MinWidth="104" Margin="0,0,6,0"
+                              Style="{StaticResource DangerButton}"
+                              Command="{Binding Web.RegenerateTokenCommand}"
+                              ToolTip="Signs out every browser using the old token." />
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12"
+                                Visibility="{Binding Web.IsListening, Converter={StaticResource BoolToVisibility}}">
+                      <Button Content="Open in browser" Style="{StaticResource PrimaryButton}" MinWidth="136"
+                              Margin="0,0,6,0" Command="{Binding Web.OpenCommand}" />
+                      <Button Content="Copy address" MinWidth="112" Command="{Binding Web.CopyUrlCommand}" />
+                    </StackPanel>
+
+                    <!-- Plain HTTP on a LAN. Say so where the decision is made, not only in the docs. -->
+                    <Border CornerRadius="{StaticResource ControlRadius}" Padding="11,9"
+                            Background="{DynamicResource WarningSoftBrush}"
+                            BorderBrush="{DynamicResource WarningBorderBrush}" BorderThickness="1"
+                            Visibility="{Binding Web.ReachableFromNetwork, Converter={StaticResource BoolToVisibility}}">
+                      <TextBlock Text="{Binding Web.SecurityNote}" TextWrapping="Wrap" FontSize="12"
+                                 Foreground="{DynamicResource WarningBrush}" />
+                    </Border>
+
+                    <TextBlock Style="{StaticResource Caption}" Margin="0,10,0,0" Text="{Binding Web.Message}" />
+                  </StackPanel>
+                </Border>
+
                 <TextBlock Text="UPDATES AND START-UP" Style="{StaticResource Subheading}" Margin="0,18,0,6" />
                 <Border Style="{StaticResource InsetCard}">
                   <StackPanel>

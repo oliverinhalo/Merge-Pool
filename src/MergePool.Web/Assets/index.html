@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>MergePool</title>
+  <style>
+    /* Same tokens as the desktop window, so the two read as one product. */
+    :root {
+      --window: #f3f4f6;
+      --surface: #ffffff;
+      --inset: #f1f3f5;
+      --border: #e3e6ea;
+      --border-strong: #cbd1d8;
+      --track: #e4e7eb;
+      --text: #16191d;
+      --muted: #5c6670;
+      --accent: #0f6cbd;
+      --accent-hover: #115ea3;
+      --accent-soft: #e8f1fa;
+      --success: #0e700e;
+      --success-soft: #e6f4e6;
+      --warning: #8a5700;
+      --warning-soft: #fdf3e0;
+      --danger: #b42318;
+      --danger-soft: #fdebe9;
+      --danger-border: #f0a9a2;
+      --foreign: #9aa4af;
+      --radius: 10px;
+      --radius-sm: 6px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --window: #14171a;
+        --surface: #1d2125;
+        --inset: #262b31;
+        --border: #2c3238;
+        --border-strong: #3c444d;
+        --track: #333a42;
+        --text: #eceff2;
+        --muted: #9ba5b0;
+        --accent: #4aa3e8;
+        --accent-hover: #5fb0ee;
+        --accent-soft: #1b2c3b;
+        --success: #6cc46c;
+        --success-soft: #1b2c1b;
+        --warning: #e0ab4c;
+        --warning-soft: #2f2718;
+        --danger: #f08076;
+        --danger-soft: #33201e;
+        --danger-border: #6b3b36;
+        --foreign: #5c6670;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 0 16px 48px;
+      background: var(--window);
+      color: var(--text);
+      font: 15px/1.5 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    .wrap { max-width: 980px; margin: 0 auto; }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 22px 0 18px;
+      flex-wrap: wrap;
+    }
+
+    header h1 { font-size: 21px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+    header .sub { color: var(--muted); font-size: 13px; margin: 2px 0 0; }
+
+    .mark {
+      width: 34px; height: 34px; border-radius: 9px; flex: none;
+      background: linear-gradient(#0f6cbd, #0a4e8a);
+      display: grid; place-items: center;
+    }
+    .mark svg { width: 22px; height: 22px; }
+
+    .pill {
+      margin-left: auto;
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 4px 11px; border-radius: 999px;
+      background: var(--success-soft); color: var(--success);
+      font-size: 12px; font-weight: 600;
+    }
+    .pill.bad { background: var(--danger-soft); color: var(--danger); }
+    .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      margin-bottom: 14px;
+    }
+
+    .inset {
+      background: var(--inset);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 13px;
+    }
+
+    h2 { font-size: 15px; font-weight: 600; margin: 0 0 12px; }
+    .label { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .04em; margin: 0 0 6px; }
+    .muted { color: var(--muted); font-size: 13px; }
+
+    .metric { font-size: 19px; font-weight: 600; }
+
+    .bar { position: relative; height: 8px; border-radius: 999px; background: var(--track); overflow: hidden; margin: 8px 0 6px; }
+    .bar i { position: absolute; inset: 0 auto 0 0; border-radius: 999px; display: block; }
+    .bar i.pool { background: var(--accent); }
+    .bar i.other { background: var(--foreign); }
+
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+
+    .row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 11px 12px; margin-top: 8px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    }
+    .row .letter {
+      width: 42px; height: 42px; flex: none; border-radius: var(--radius-sm);
+      background: var(--accent-soft); color: var(--accent);
+      display: grid; place-items: center; font-weight: 600; font-size: 13px;
+    }
+    .row .body { flex: 1 1 auto; min-width: 0; }
+    .row .name { font-weight: 600; font-size: 13px; }
+    .row .side { text-align: right; font-size: 12px; flex: none; }
+
+    .state-Online, .state-Healthy { color: var(--success); font-weight: 600; }
+    .state-Offline, .state-Missing { color: var(--danger); font-weight: 600; }
+    .state-Degraded, .state-ReadOnly, .state-throttled { color: var(--warning); font-weight: 600; }
+
+    button {
+      font: inherit; font-size: 13px;
+      padding: 8px 15px; border-radius: var(--radius-sm); cursor: pointer;
+      background: var(--surface); color: var(--text);
+      border: 1px solid var(--border-strong);
+    }
+    button:hover:not(:disabled) { border-color: var(--accent); }
+    button:disabled { opacity: .45; cursor: default; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+    button.primary:hover:not(:disabled) { background: var(--accent-hover); }
+    button.danger { color: var(--danger); border-color: var(--danger-border); }
+
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+
+    input[type=password], input[type=text] {
+      font: inherit; font-size: 14px; width: 100%;
+      padding: 9px 11px; border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      background: var(--surface); color: var(--text);
+    }
+    input:focus { outline: none; border-color: var(--accent); }
+
+    .banner {
+      border-radius: var(--radius); padding: 13px 15px; margin-bottom: 14px;
+      border: 1px solid var(--danger-border); background: var(--danger-soft); color: var(--danger);
+      font-size: 13px;
+    }
+    .banner.warn { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
+    .banner.ok { border-color: var(--success); background: var(--success-soft); color: var(--success); }
+
+    #signin { max-width: 420px; margin: 8vh auto 0; }
+    #signin p { font-size: 13px; color: var(--muted); }
+
+    footer { color: var(--muted); font-size: 12px; text-align: center; padding: 24px 0 0; }
+
+    @media (max-width: 640px) {
+      .cols { grid-template-columns: 1fr; gap: 14px; }
+      .row { flex-wrap: wrap; }
+      .row .side { text-align: left; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <!-- Sign in: the token is never stored on the server, so the browser has to hold it. -->
+    <section id="signin" class="card" hidden>
+      <h2>MergePool</h2>
+      <p>Enter the access token from MergePool's <strong>Settings &rarr; Web interface</strong> on the computer running it.</p>
+      <form id="signin-form">
+        <input id="token" type="password" autocomplete="current-password" placeholder="Access token" />
+        <div class="actions">
+          <button class="primary" type="submit">Connect</button>
+        </div>
+      </form>
+      <p id="signin-error" class="banner" hidden></p>
+    </section>
+
+    <main id="app" hidden>
+      <header>
+        <div class="mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <rect x="2" y="4" width="9" height="3" rx="1.5" fill="#fff" opacity=".95" />
+            <rect x="2" y="10.5" width="9" height="3" rx="1.5" fill="#fff" opacity=".95" />
+            <rect x="2" y="17" width="9" height="3" rx="1.5" fill="#fff" opacity=".95" />
+            <rect x="15" y="4" width="7" height="16" rx="2.5" fill="#fff" />
+            <path d="M11 5.5h4M11 12h4M11 18.5h4" stroke="#fff" stroke-width="1.6" stroke-linecap="round" opacity=".9" />
+          </svg>
+        </div>
+        <div>
+          <h1>MergePool</h1>
+          <p class="sub" id="subtitle">Connecting&hellip;</p>
+        </div>
+        <span class="pill" id="health"><span class="dot"></span><span id="health-text">Connected</span></span>
+      </header>
+
+      <div id="problems"></div>
+      <div id="pools"></div>
+
+      <section class="card">
+        <h2>Drives not in a pool</h2>
+        <div id="free-drives" class="muted">Loading&hellip;</div>
+      </section>
+
+      <div class="actions">
+        <button id="refresh">Refresh</button>
+        <button id="signout">Sign out</button>
+      </div>
+
+      <footer>
+        <span id="version"></span> &middot; This page is served over plain HTTP on your own network.
+      </footer>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

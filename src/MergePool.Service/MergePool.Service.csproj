@@ -22,6 +22,7 @@
     <ProjectReference Include="..\MergePool.Fs.WinFsp\MergePool.Fs.WinFsp.csproj" />
     <ProjectReference Include="..\MergePool.Ipc\MergePool.Ipc.csproj" />
     <ProjectReference Include="..\MergePool.Update\MergePool.Update.csproj" />
+    <ProjectReference Include="..\MergePool.Web\MergePool.Web.csproj" />
   </ItemGroup>
 
 </Project>

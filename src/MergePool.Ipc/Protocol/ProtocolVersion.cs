@@ -17,7 +17,7 @@ namespace MergePool.Ipc.Protocol;
 /// </remarks>
 public static class ProtocolVersion
 {
-    public const int Current = 3;
+    public const int Current = 4;
 
     public const int MinimumSupported = 1;
 
@@ -47,6 +47,8 @@ public static class Capabilities
     public const string DriveRemoval = "driveRemoval";
     /// <summary>Checking for and applying updates from the release feed (protocol 3).</summary>
     public const string AutoUpdate = "autoUpdate";
+    /// <summary>The web interface: a port to serve it on, and who may reach it (protocol 4).</summary>
+    public const string WebInterface = "webInterface";
     public const string Config = "config";
     public const string Upgrade = "upgrade";
 
@@ -60,6 +62,7 @@ public static class Capabilities
         Usage,
         DriveRemoval,
         AutoUpdate,
+        WebInterface,
         Config,
         Upgrade,
     ];
@@ -96,6 +99,9 @@ public static class Methods
     public const string UpdateCheck = "update.check";
     public const string UpdateApply = "update.apply";
     public const string UpdateSetOptions = "update.setOptions";
+    public const string WebGet = "web.get";
+    public const string WebSet = "web.set";
+    public const string WebRegenerateToken = "web.regenerateToken";
     public const string HealthCheck = "health.check";
 }
 

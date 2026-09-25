@@ -1,8 +1,10 @@
 using System.Runtime.Versioning;
+using MergePool.Core.Config;
 using MergePool.Engine;
 using MergePool.Engine.Ipc;
 using MergePool.Ipc.Protocol;
 using MergePool.Ipc.Server;
+using MergePool.Web;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -21,6 +23,8 @@ public sealed class PoolEngineWorker(
     private static readonly TimeSpan TickInterval = TimeSpan.FromSeconds(15);
 
     private IpcServer? _server;
+    private WebControlServer? _web;
+    private WindowsFirewallRule? _firewall;
 
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -30,7 +34,28 @@ public sealed class PoolEngineWorker(
                 "Configuration was migrated to the current schema. Backup: {Backup}", engine.ConfigBackupPath);
         }
 
-        var router = new IpcRouter().Register(new EngineIpcHandler(engine, updates.Service));
+        // The web interface lives here rather than in the window: it has to keep serving whether or
+        // not anyone is signed in, and only the service's account can bind a port for the network.
+        engine.NewWebToken = WebAccessToken.Generate;
+        _firewall = new WindowsFirewallRule(logger);
+        _web = new WebControlServer(
+            new WebApi(engine, updates.Service),
+            () => engine.Config.Web,
+            (message, exception) =>
+            {
+                if (exception is null)
+                {
+                    logger.LogInformation("Web interface: {Message}", message);
+                }
+                else
+                {
+                    logger.LogWarning(exception, "Web interface: {Message}", message);
+                }
+            });
+
+        ApplyWebInterface();
+
+        var router = new IpcRouter().Register(new EngineIpcHandler(engine, updates.Service, DescribeWeb));
 
         _server = new IpcServer(
             new IpcServerOptions
@@ -71,6 +96,11 @@ public sealed class PoolEngineWorker(
             {
                 engine.Tick(stoppingToken);
                 RunRebalancePass(stoppingToken);
+
+                // Cheap when nothing changed: this only acts when the port, the scope or the on/off
+                // switch is not what the server is currently doing.
+                ApplyWebInterface();
+
                 await RunUpdateCheckAsync(stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
@@ -127,6 +157,45 @@ public sealed class PoolEngineWorker(
         }
     }
 
+    /// <summary>
+    /// Brings the web server and the firewall rule in line with the settings. The rule is only ever
+    /// open while the interface is both on and set to be reachable from the network.
+    /// </summary>
+    private void ApplyWebInterface()
+    {
+        if (_web is null)
+        {
+            return;
+        }
+
+        _web.Apply();
+
+        var options = engine.Config.Web;
+        var status = _web.Status;
+
+        var wantsRule = options.ManageFirewallRule
+            && options.Enabled
+            && options.AccessScope is WebAccessScope.Network
+            && status.State is WebServerState.Listening;
+
+        _firewall?.Apply(wantsRule ? options.Port : null);
+    }
+
+    /// <summary>What the UI is told about the web interface, over the pipe.</summary>
+    private WebInterfaceResult DescribeWeb()
+    {
+        var status = _web?.Status;
+
+        return new WebInterfaceResult
+        {
+            State = (status?.State ?? WebServerState.Stopped).ToString(),
+            Url = status?.Url,
+            Error = status?.Error,
+            RequestCount = status?.RequestCount ?? 0,
+            RejectedCount = status?.RejectedCount ?? 0,
+        };
+    }
+
     /// <summary>Rebalancing is opportunistic: one pool per tick, and never while draining.</summary>
     private void RunRebalancePass(CancellationToken stoppingToken)
     {
@@ -171,6 +240,13 @@ public sealed class PoolEngineWorker(
     {
         logger.LogInformation("Draining pools for shutdown.");
         engine.Drain();
+
+        // The port closes with the service, and the firewall rule goes with it: an open port that
+        // nothing is listening on is still a door.
+        _web?.Dispose();
+        _web = null;
+        _firewall?.Remove();
+        _firewall = null;
 
         if (_server is not null)
         {

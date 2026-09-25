@@ -673,6 +673,33 @@ public sealed class PoolEngine : IDisposable
         }
     }
 
+    /// <summary>
+    /// Applies web interface settings and persists them. A token is generated the first time the
+    /// interface is turned on, so it is never reachable without one.
+    /// </summary>
+    public void UpdateWebOptions(Action<WebOptions> update)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+
+        lock (_gate)
+        {
+            update(_config.Web);
+
+            if (_config.Web.Enabled && string.IsNullOrEmpty(_config.Web.AccessToken))
+            {
+                _config.Web.AccessToken = NewWebToken?.Invoke() ?? Guid.NewGuid().ToString("N");
+            }
+
+            _configStore.Save(_config);
+        }
+    }
+
+    /// <summary>
+    /// Supplies access tokens. Set by the host so the engine does not have to know how one is made;
+    /// falls back to a GUID, which is weaker but never nothing.
+    /// </summary>
+    public Func<string>? NewWebToken { get; set; }
+
     /// <summary>Everything wrong with the pools right now, empty when all is well.</summary>
     public IReadOnlyList<string> CheckHealth()
     {

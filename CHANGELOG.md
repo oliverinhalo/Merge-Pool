@@ -12,6 +12,42 @@ change:
 - **Config schema** — `config.json` `schemaVersion`, migrated forward only, backed up first,
   unknown fields preserved.
 
+## [0.4.0] - 2026-09-25
+
+Data format: unchanged. Config schema: unchanged — a `web` section is added with defaults, and a
+0.3.0 build reads the file without migrating.
+
+### Added
+
+- **A web interface, on a port you choose.** Turn it on in **Settings → Web interface**, pick any
+  port from 1024 to 65535, and control MergePool from a browser: pool status with both usage
+  figures, per-drive throughput, mount, unmount, rebalance, add a drive, and remove one either way
+  round. The service serves it, so it works whether or not the window is open.
+- The port, who may reach it (this computer only, or anything on your network), whether the browser
+  may change anything or only look, and whether MergePool opens the Windows Firewall port for it are
+  all settings. The access token is shown, can be copied, and can be replaced — which signs out
+  every browser using the old one.
+
+### Security
+
+- The interface is **off by default**, and bound to this computer only until that is explicitly
+  changed.
+- Every API request must carry the access token, generated when the interface is first turned on and
+  compared in constant time. The page itself is served without one because it contains nothing but
+  the sign-in shell.
+- A scope the configuration does not recognise falls back to this-computer-only, so a hand-edited or
+  newer config can never widen access by accident.
+- The firewall rule is opened only on the private and domain profiles, only while the interface is
+  both on and set to be reachable from the network, and is closed again when it is not — including
+  when the service stops.
+- **The connection is plain HTTP.** Anyone on the network who has the token can control MergePool,
+  and the traffic is not encrypted. The window says so where the choice is made, not only here.
+
+### Changed
+
+- Wire protocol 4 with capability `webInterface`. `MinimumSupported` stays at 1, so an older UI is
+  unaffected.
+
 ## [0.3.0] - 2026-09-25
 
 Data format: unchanged. Config schema: unchanged — `updates` and `ui` sections are added with
