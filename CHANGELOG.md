@@ -68,6 +68,15 @@ change:
   "start the service" task checkbox, so the engine was left down and the UI came up reporting that
   the service could not be reached. An upgrade now always restarts the service it stopped, and
   waits longer for the stop to release the files.
+- Upgrading swapped the `current` junction by deleting it and then moving the replacement into
+  place. If that move failed, `current` was simply gone, and the service — registered at
+  `{app}\current\MergePool.Service.exe` — could never start again. The new link is now built
+  under a staging name first, falls back to creating the link directly if the rename fails, and
+  the install verifies that `current` really resolves to `MergePool.Service.exe` afterwards.
+- "The MergePool service is not running or cannot be reached" said nothing about what to do about
+  it. It now names the fix, since starting a service needs an elevated shell and `Start-Service`
+  from an ordinary one fails with an opaque "cannot open MergePool service" error.
+
 - The installer failed to compile: a Pascal `{ }` comment in the `[Code]` section contained
   `{app}`, and the `}` inside it closed the comment early, leaving the rest of the sentence to be
   parsed as code. All `[Code]` comments are now `//`, which cannot be ended by a brace. CI now

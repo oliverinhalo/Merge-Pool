@@ -59,7 +59,10 @@ public sealed class ServiceConnection : IAsyncDisposable
         }
         catch (Exception exception) when (exception is IOException or TimeoutException or OperationCanceledException or UnauthorizedAccessException)
         {
-            LastError = "The MergePool service is not running or cannot be reached.";
+            // A dead pipe almost always means the service is stopped, and stopped services
+            // need an elevated shell to start, so say that rather than leaving it a mystery.
+            LastError = "The MergePool service is not running or cannot be reached. "
+                + "Start it from an Administrator PowerShell with: Start-Service MergePool";
             Handshake = null;
             return false;
         }

@@ -136,34 +136,58 @@ begin
   Result := UpgradingExistingInstall or WizardIsTaskSelected('startservice');
 end;
 
-// Repoints {app}\current at the version just installed. Built beside the old link and swapped, so
-// a failure part-way leaves either the old link or the new one, never a missing 'current'.
+// Repoints {app}\current at the version just installed. The service's binary path goes through
+// this link, so if it does not end up resolving, MergePool is dead on the next start.
 // Note: these are // comments on purpose. A Pascal { } comment would end at the } in {app}.
-function PointCurrentAt(Version: String): Boolean;
+
+// rmdir without /S removes a junction itself and never the directory it points at.
+procedure RemoveLink(LinkPath: String);
 var
   ResultCode: Integer;
+begin
+  if DirExists(LinkPath) then
+    Exec(ExpandConstant('{cmd}'), '/c rmdir "' + LinkPath + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+function CreateJunction(LinkPath, TargetPath: String): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := Exec(ExpandConstant('{cmd}'), '/c mklink /J "' + LinkPath + '" "' + TargetPath + '"',
+                 '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+end;
+
+function PointCurrentAt(Version: String): Boolean;
+var
   CurrentPath, StagingPath, TargetPath: String;
 begin
   CurrentPath := ExpandConstant('{app}\current');
   StagingPath := CurrentPath + '.new';
   TargetPath := ExpandConstant('{app}\versions\') + Version;
 
-  if DirExists(StagingPath) then
-    Exec(ExpandConstant('{sys}\cmd.exe'), '/c rmdir "' + StagingPath + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  // Build the new link beside the old one and swap, so a crash part-way leaves one or the other.
+  RemoveLink(StagingPath);
 
-  Result := Exec(ExpandConstant('{sys}\cmd.exe'),
-                 '/c mklink /J "' + StagingPath + '" "' + TargetPath + '"',
-                 '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+  if CreateJunction(StagingPath, TargetPath) then
+  begin
+    RemoveLink(CurrentPath);
 
-  if not Result then
-    Exit;
+    if not RenameFile(StagingPath, CurrentPath) then
+    begin
+      // The swap failed with the old link already gone, which would leave the service pointing at
+      // nothing. Put a working link back directly rather than leave it missing.
+      RemoveLink(StagingPath);
+      CreateJunction(CurrentPath, TargetPath);
+    end;
+  end
+  else
+  begin
+    RemoveLink(CurrentPath);
+    CreateJunction(CurrentPath, TargetPath);
+  end;
 
-  if DirExists(CurrentPath) then
-    Exec(ExpandConstant('{sys}\cmd.exe'), '/c rmdir "' + CurrentPath + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-
-  Result := Exec(ExpandConstant('{sys}\cmd.exe'),
-                 '/c move "' + StagingPath + '" "' + CurrentPath + '"',
-                 '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+  // Whether the link resolves to a runnable service is the only thing that actually matters.
+  Result := FileExists(AddBackslash(CurrentPath) + 'MergePool.Service.exe');
 end;
 
 procedure InitializeWizard;

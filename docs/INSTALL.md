@@ -128,6 +128,13 @@ Check the service is running: `Get-Service MergePool` in PowerShell. If it is st
 `Start-Service MergePool`. If it will not start, the usual causes are the .NET 8 Desktop Runtime
 missing, or WinFsp not installed.
 
+**`Start-Service` says "Cannot open MergePool service on computer '.'"**
+
+That is Windows refusing the request, not the service failing: starting a service needs
+administrator rights. Close the window, open PowerShell with **Run as administrator**, and run
+`Start-Service MergePool` again. Note that the error looks the same whether or not the service
+itself is healthy, so an elevated retry is always the first thing to try.
+
 **MergePool's window says "The MergePool service is not running or cannot be reached"**
 
 The UI talks to the service over a named pipe (`MergePool.Engine`). Start the service as above. The
