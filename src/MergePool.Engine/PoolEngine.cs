@@ -208,6 +208,86 @@ public sealed class PoolEngine : IDisposable
     }
 
     /// <summary>
+    /// Adds drives to a pool that already exists. Each new drive gets its own
+    /// <c>.PoolPart-{GUID}</c> folder and nothing else on it is read, moved or modified unless
+    /// adoption is asked for. The pool does not need unmounting: the extra space and any adopted
+    /// files show up in the mounted drive as soon as the topology is re-resolved.
+    /// </summary>
+    public PoolRuntime AddDrives(
+        Guid poolId,
+        IReadOnlyList<VolumeId> volumeIds,
+        bool adoptExistingContent = false)
+    {
+        ArgumentNullException.ThrowIfNull(volumeIds);
+
+        if (volumeIds.Count == 0)
+        {
+            throw new ArgumentException("No drives were given to add.", nameof(volumeIds));
+        }
+
+        var runtime = FindPool(poolId) ?? throw new KeyNotFoundException($"No pool {poolId:D}.");
+
+        // Everything is checked before any drive is touched, so one unusable drive in the list
+        // cannot leave the pool half-extended.
+        var volumes = new List<VolumeInfo>(volumeIds.Count);
+        foreach (var volumeId in volumeIds.Distinct())
+        {
+            var owner = FindPoolForVolume(volumeId);
+            if (owner == poolId)
+            {
+                throw new InvalidOperationException($"Drive {volumeId} is already in this pool.");
+            }
+
+            if (owner is not null)
+            {
+                throw new InvalidOperationException($"Drive {volumeId} is already in another pool.");
+            }
+
+            var volume = _volumes.TryGetVolume(volumeId)
+                ?? throw new InvalidOperationException($"Drive {volumeId} is not available.");
+
+            if (!volume.IsPoolable)
+            {
+                throw new InvalidOperationException($"Drive {volume.Label} ({volumeId}) cannot be pooled.");
+            }
+
+            volumes.Add(volume);
+        }
+
+        var adopter = new PoolAdopter();
+        var added = new List<PoolDriveDefinition>(volumes.Count);
+
+        foreach (var volume in volumes)
+        {
+            var part = _partManager.CreatePart(volume, poolId, runtime.Definition.Name);
+
+            added.Add(new PoolDriveDefinition
+            {
+                VolumeId = volume.Id.ToVolumePath(),
+                PartId = part.PartId,
+                Label = volume.Label,
+                LastKnownLetter = volume.DriveLetter?.ToString(CultureInfo.InvariantCulture),
+            });
+
+            if (adoptExistingContent && volume.RootPath is not null)
+            {
+                var plan = adopter.Plan(volume.RootPath, part.PartId);
+                adopter.Adopt(volume.RootPath, part.PartId, plan);
+            }
+        }
+
+        lock (_gate)
+        {
+            runtime.Definition.Drives.AddRange(added);
+            _configStore.Save(_config);
+        }
+
+        // The union view reads the definition on every resolve, so this is all a mounted pool needs.
+        runtime.Invalidate();
+        return runtime;
+    }
+
+    /// <summary>
     /// Removes a pool from the configuration. Pool parts are left on the drives unless explicitly
     /// asked for, because removing a pool must never destroy data.
     /// </summary>

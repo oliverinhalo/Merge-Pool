@@ -25,6 +25,7 @@ public sealed class EngineIpcHandler(PoolEngine engine) : IIpcMethodHandler
         IpcMethods.PoolStatus,
         IpcMethods.PoolCreate,
         IpcMethods.PoolRemove,
+        IpcMethods.PoolAddDrives,
         IpcMethods.PoolMount,
         IpcMethods.PoolUnmount,
         IpcMethods.MetricsGet,
@@ -62,6 +63,7 @@ public sealed class EngineIpcHandler(PoolEngine engine) : IIpcMethodHandler
                 IpcMethods.PoolStatus => PoolStatus(call),
                 IpcMethods.PoolCreate => CreatePool(call),
                 IpcMethods.PoolRemove => RemovePool(call),
+                IpcMethods.PoolAddDrives => AddDrives(call),
                 IpcMethods.PoolMount => MountPool(call),
                 IpcMethods.PoolUnmount => UnmountPool(call),
                 IpcMethods.MetricsGet => Ok(id, MetricsFor()),
@@ -220,16 +222,10 @@ public sealed class EngineIpcHandler(PoolEngine engine) : IIpcMethodHandler
     {
         var request = call.PayloadAs<CreatePoolRequest>();
 
-        var volumeIds = new List<VolumeId>(request.VolumeIds.Count);
-        foreach (var raw in request.VolumeIds)
+        if (!TryParseVolumes(request.VolumeIds, out var volumeIds, out var invalid))
         {
-            if (!VolumeId.TryParse(raw, out var volumeId))
-            {
-                return IpcResponse.Failure(
-                    call.Request.Id, IpcErrorCodes.InvalidRequest, $"'{raw}' is not a volume identifier.");
-            }
-
-            volumeIds.Add(volumeId);
+            return IpcResponse.Failure(
+                call.Request.Id, IpcErrorCodes.InvalidRequest, $"'{invalid}' is not a volume identifier.");
         }
 
         var runtime = _engine.CreatePool(
@@ -239,6 +235,41 @@ public sealed class EngineIpcHandler(PoolEngine engine) : IIpcMethodHandler
             request.AdoptExistingContent,
             request.MountImmediately);
 
+        return Ok(call.Request.Id, Describe(runtime));
+    }
+
+    private static bool TryParseVolumes(
+        IReadOnlyList<string> raw,
+        out List<VolumeId> volumeIds,
+        out string? invalid)
+    {
+        volumeIds = new List<VolumeId>(raw.Count);
+        foreach (var value in raw)
+        {
+            if (!VolumeId.TryParse(value, out var volumeId))
+            {
+                invalid = value;
+                return false;
+            }
+
+            volumeIds.Add(volumeId);
+        }
+
+        invalid = null;
+        return true;
+    }
+
+    private IpcResponse AddDrives(IpcCall call)
+    {
+        var request = call.PayloadAs<AddDrivesRequest>();
+
+        if (!TryParseVolumes(request.VolumeIds, out var volumeIds, out var invalid))
+        {
+            return IpcResponse.Failure(
+                call.Request.Id, IpcErrorCodes.InvalidRequest, $"'{invalid}' is not a volume identifier.");
+        }
+
+        var runtime = _engine.AddDrives(request.PoolId, volumeIds, request.AdoptExistingContent);
         return Ok(call.Request.Id, Describe(runtime));
     }
 

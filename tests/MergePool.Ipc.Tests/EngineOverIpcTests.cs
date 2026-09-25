@@ -356,4 +356,205 @@ public sealed class EngineOverIpcTests : IAsyncLifetime
         restarted.MountAll();
         Assert.True(restarted.IsMounted(pool.PoolId));
     }
+
+    [Fact]
+    public async Task A_drive_can_be_added_to_a_pool_that_is_already_mounted()
+    {
+        var first = AddDrive("One", total: 1_000, free: 400);
+        var second = AddDrive("Two", total: 3_000, free: 2_500);
+        await using var client = await ConnectAsync();
+
+        var pool = await client.InvokeAsync<PoolDto>(
+            Methods.PoolCreate,
+            new CreatePoolRequest { Name = "Media", MountPoint = "P:", VolumeIds = [first.ToVolumePath()] },
+            CancellationToken.None);
+
+        var partRoot = Path.Combine(_root, "One", ".PoolPart-" + pool.Parts[0].PartId.ToString("D"));
+        File.WriteAllText(Path.Combine(partRoot, "already-pooled.txt"), "still here");
+
+        var grown = await client.InvokeAsync<PoolDto>(
+            Methods.PoolAddDrives,
+            new AddDrivesRequest { PoolId = pool.PoolId, VolumeIds = [second.ToVolumePath()] },
+            CancellationToken.None);
+
+        Assert.Equal(2, grown.Parts.Count);
+        Assert.Equal("Healthy", grown.Health);
+        Assert.Equal(4_000, grown.TotalBytes);
+        Assert.Equal(2_900, grown.FreeBytes);
+
+        // It never went down, and what was already pooled did not move.
+        Assert.True(grown.IsMounted);
+        Assert.Equal("still here", File.ReadAllText(Path.Combine(partRoot, "already-pooled.txt")));
+    }
+
+    [Fact]
+    public async Task Adding_a_drive_leaves_the_data_already_on_it_untouched()
+    {
+        var first = AddDrive("One");
+        var second = AddDrive("Two");
+
+        // Two is not empty: it carries files that must survive being pooled, byte for byte.
+        var twoRoot = Path.Combine(_root, "Two");
+        Directory.CreateDirectory(Path.Combine(twoRoot, "Photos"));
+        File.WriteAllText(Path.Combine(twoRoot, "Photos", "holiday.raw"), "irreplaceable");
+        File.WriteAllText(Path.Combine(twoRoot, "taxes.pdf"), "also irreplaceable");
+
+        await using var client = await ConnectAsync();
+
+        var pool = await client.InvokeAsync<PoolDto>(
+            Methods.PoolCreate,
+            new CreatePoolRequest { Name = "Media", MountPoint = "P:", VolumeIds = [first.ToVolumePath()] },
+            CancellationToken.None);
+
+        var grown = await client.InvokeAsync<PoolDto>(
+            Methods.PoolAddDrives,
+            new AddDrivesRequest { PoolId = pool.PoolId, VolumeIds = [second.ToVolumePath()] },
+            CancellationToken.None);
+
+        // The only thing added to the drive is its own pool part folder.
+        var added = grown.Parts.Single(part => part.Label == "Two");
+        Assert.True(Directory.Exists(Path.Combine(twoRoot, ".PoolPart-" + added.PartId.ToString("D"))));
+
+        Assert.Equal("irreplaceable", File.ReadAllText(Path.Combine(twoRoot, "Photos", "holiday.raw")));
+        Assert.Equal("also irreplaceable", File.ReadAllText(Path.Combine(twoRoot, "taxes.pdf")));
+    }
+
+    [Fact]
+    public async Task Adding_a_drive_with_adoption_moves_its_files_in_without_copying_them()
+    {
+        var first = AddDrive("One");
+        var second = AddDrive("Two");
+
+        var twoRoot = Path.Combine(_root, "Two");
+        Directory.CreateDirectory(twoRoot);
+        File.WriteAllText(Path.Combine(twoRoot, "film.mkv"), "whole file");
+
+        await using var client = await ConnectAsync();
+
+        var pool = await client.InvokeAsync<PoolDto>(
+            Methods.PoolCreate,
+            new CreatePoolRequest { Name = "Media", MountPoint = "P:", VolumeIds = [first.ToVolumePath()] },
+            CancellationToken.None);
+
+        var grown = await client.InvokeAsync<PoolDto>(
+            Methods.PoolAddDrives,
+            new AddDrivesRequest
+            {
+                PoolId = pool.PoolId,
+                VolumeIds = [second.ToVolumePath()],
+                AdoptExistingContent = true,
+            },
+            CancellationToken.None);
+
+        var added = grown.Parts.Single(part => part.Label == "Two");
+        var adopted = Path.Combine(twoRoot, ".PoolPart-" + added.PartId.ToString("D"), "film.mkv");
+
+        // Moved, not copied: it is inside the part and gone from the root, still on the same drive.
+        Assert.Equal("whole file", File.ReadAllText(adopted));
+        Assert.False(File.Exists(Path.Combine(twoRoot, "film.mkv")));
+    }
+
+    [Fact]
+    public async Task A_drive_cannot_join_the_same_pool_twice()
+    {
+        var volume = AddDrive("One");
+        await using var client = await ConnectAsync();
+
+        var pool = await client.InvokeAsync<PoolDto>(
+            Methods.PoolCreate,
+            new CreatePoolRequest { Name = "Media", MountPoint = "P:", VolumeIds = [volume.ToVolumePath()] },
+            CancellationToken.None);
+
+        var failure = await Assert.ThrowsAsync<IpcException>(() => client.InvokeAsync<PoolDto>(
+            Methods.PoolAddDrives,
+            new AddDrivesRequest { PoolId = pool.PoolId, VolumeIds = [volume.ToVolumePath()] },
+            CancellationToken.None));
+
+        Assert.Equal(IpcErrorCodes.Conflict, failure.Code);
+
+        var unchanged = await client.InvokeAsync<PoolDto>(
+            Methods.PoolStatus, new PoolReference { PoolId = pool.PoolId }, CancellationToken.None);
+        Assert.Single(unchanged.Parts);
+    }
+
+    [Fact]
+    public async Task A_drive_in_another_pool_is_refused_and_nothing_is_half_added()
+    {
+        var first = AddDrive("One");
+        var second = AddDrive("Two");
+        var third = AddDrive("Three");
+        await using var client = await ConnectAsync();
+
+        var media = await client.InvokeAsync<PoolDto>(
+            Methods.PoolCreate,
+            new CreatePoolRequest { Name = "Media", MountPoint = "P:", VolumeIds = [first.ToVolumePath()] },
+            CancellationToken.None);
+
+        var backups = await client.InvokeAsync<PoolDto>(
+            Methods.PoolCreate,
+            new CreatePoolRequest { Name = "Backups", MountPoint = "Q:", VolumeIds = [second.ToVolumePath()] },
+            CancellationToken.None);
+
+        // Three is free, Two belongs to Backups. The whole call must fail, including Three.
+        var failure = await Assert.ThrowsAsync<IpcException>(() => client.InvokeAsync<PoolDto>(
+            Methods.PoolAddDrives,
+            new AddDrivesRequest
+            {
+                PoolId = media.PoolId,
+                VolumeIds = [third.ToVolumePath(), second.ToVolumePath()],
+            },
+            CancellationToken.None));
+
+        Assert.Equal(IpcErrorCodes.Conflict, failure.Code);
+
+        var unchanged = await client.InvokeAsync<PoolDto>(
+            Methods.PoolStatus, new PoolReference { PoolId = media.PoolId }, CancellationToken.None);
+        Assert.Single(unchanged.Parts);
+
+        Assert.Single(
+            (await client.InvokeAsync<PoolDto>(
+                Methods.PoolStatus, new PoolReference { PoolId = backups.PoolId }, CancellationToken.None)).Parts);
+
+        // And no pool part was left behind on the drive that would have been fine.
+        Assert.Empty(Directory.GetDirectories(Path.Combine(_root, "Three"), ".PoolPart-*"));
+    }
+
+    [Fact]
+    public async Task An_added_drive_survives_a_service_restart()
+    {
+        var first = AddDrive("One");
+        var second = AddDrive("Two");
+
+        await using (var client = await ConnectAsync())
+        {
+            var pool = await client.InvokeAsync<PoolDto>(
+                Methods.PoolCreate,
+                new CreatePoolRequest { Name = "Media", MountPoint = "P:", VolumeIds = [first.ToVolumePath()] },
+                CancellationToken.None);
+
+            await client.InvokeAsync<PoolDto>(
+                Methods.PoolAddDrives,
+                new AddDrivesRequest { PoolId = pool.PoolId, VolumeIds = [second.ToVolumePath()] },
+                CancellationToken.None);
+        }
+
+        using var restarted = new PoolEngine(new PoolEngineOptions
+        {
+            ConfigStore = new ConfigStore(Path.Combine(_root, "config.json")),
+            VolumeProvider = _volumes,
+            MountService = new InMemoryMountService(),
+        });
+
+        var reloaded = Assert.Single(restarted.Pools);
+        Assert.Equal(2, reloaded.Snapshot.Parts.Count);
+        Assert.Equal(Core.Model.PoolHealth.Healthy, reloaded.Snapshot.Health);
+    }
+
+    [Fact]
+    public async Task Growing_a_pool_is_announced_as_a_capability()
+    {
+        await using var client = await ConnectAsync();
+
+        Assert.True(client.Supports(Capabilities.PoolEdit));
+    }
 }

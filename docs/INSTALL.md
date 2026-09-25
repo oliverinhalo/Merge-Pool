@@ -37,7 +37,7 @@ one.
 
 ### 2. Install
 
-1. Download `MergePool-0.1.0-setup.exe`.
+1. Download `MergePool-0.2.0-setup.exe`.
 2. Run it and accept the UAC prompt.
 3. If WinFsp is missing, setup downloads and installs it before continuing. This needs an internet
    connection. If the download fails, setup tells you so and stops — install WinFsp yourself from
@@ -78,11 +78,52 @@ copy: it is near-instant and moves no data between drives. Windows and system fo
 (`Windows`, `Program Files`, `$RECYCLE.BIN`, `System Volume Information`, page files and similar)
 are never adopted.
 
+#### Adding a drive to a pool later
+
+A pool is not fixed at creation. To grow one:
+
+1. Select the pool on the right-hand side of the window.
+2. **Tick the new drive(s)** on the left.
+3. Click **Add to '<pool name>'**.
+
+The pool stays mounted the whole time. Its drive letter does not disappear, open files are not
+interrupted, and the extra space shows up in Explorer within a couple of seconds. Nothing already in
+the pool is moved or rewritten — new files simply start being placed on the new drive as well,
+because it is the emptiest. If you want existing pooled files spread onto it, click **Rebalance**;
+that runs in the background at low priority and skips files that are in use.
+
+A drive can only be in one pool. One that already belongs to a pool shows "Already pooled" and
+cannot be ticked, and a request to add it is refused rather than half-applied.
+
+#### "I want to add a drive that has data on it I cannot afford to break"
+
+Add it. MergePool does not reformat, repartition, move, rename or delete anything that is already on
+a drive you add. All it writes to the drive is one new folder at the root, `.PoolPart-{GUID}`, and it
+only ever works inside that folder. Your existing files are left exactly where they are, with the
+same names, permissions and timestamps — they are simply not part of the pool, and are not visible
+through the pool's drive letter. The drive keeps its own letter, and you carry on using it directly
+as you always did.
+
+Three things follow from that, worth knowing before you click:
+
+- **Leave "Also move each drive's existing files into the pool" unticked.** That option is the only
+  thing that touches existing content, and it is off by default. (Even then it is a rename within
+  the same drive, never a copy or a cross-drive move, and it skips Windows and system folders — but
+  if the data is irreplaceable, there is no reason to opt in.)
+- **The pool's free space is the drive's free space.** MergePool does not reserve or claim the space
+  your existing files occupy; the pool simply sees whatever is actually free.
+- **Removing the drive later is safe.** Removing a pool leaves every file on its drive in its
+  `.PoolPart-{GUID}` folder, as ordinary files, and never deletes anything.
+
+The one precaution worth taking is the ordinary one: MergePool is not a backup, and pooling drives
+does not make them redundant. If a drive dies, the files that were on it are gone — from the pool
+and from the drive alike. Keep a backup of anything irreplaceable, whether or not it is pooled.
+
 ### 4. Where MergePool puts things
 
 | Path | What it is |
 | --- | --- |
-| `C:\Program Files\MergePool\versions\0.1.0\` | The program files for one version |
+| `C:\Program Files\MergePool\versions\0.2.0\` | The program files for one version |
 | `C:\Program Files\MergePool\current` | A junction pointing at the version in use |
 | `C:\ProgramData\MergePool\config.json` | Your pools and settings. Deliberately outside the program folder so updates never disturb it |
 | `<each pooled drive>\.PoolPart-{GUID}\` | Your pooled files, as ordinary files in the same folder structure you see in the pool |

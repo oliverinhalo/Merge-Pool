@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <!-- SemVer. Keep in sync with CHANGELOG.md. -->
-    <VersionPrefix>0.1.0</VersionPrefix>
+    <VersionPrefix>0.2.0</VersionPrefix>
     <Product>MergePool</Product>
     <Company>MergePool</Company>
     <Authors>MergePool contributors</Authors>

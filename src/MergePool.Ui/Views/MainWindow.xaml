@@ -62,7 +62,7 @@
           <TextBlock DockPanel.Dock="Top" Text="Drives" Style="{StaticResource Heading}" />
           <TextBlock DockPanel.Dock="Top" Style="{StaticResource Caption}" TextWrapping="Wrap"
                      Margin="0,0,0,12"
-                     Text="Tick the drives to pool. Existing files on them are left exactly where they are." />
+                     Text="Tick the drives to pool, then create a new pool or add them to the one selected on the right. Existing files on them are left exactly where they are." />
 
           <!-- New pool settings -->
           <Border DockPanel.Dock="Bottom" Background="#F8F8F8" CornerRadius="6" Padding="12" Margin="0,12,0,0">
@@ -92,9 +92,18 @@
                            Text="Also move each drive's existing files into the pool (stays on the same drive, nothing is copied)" />
               </CheckBox>
 
-              <Button Content="Create pool" HorizontalAlignment="Left" MinWidth="140"
-                      Background="#0F6CBD" Foreground="White" BorderThickness="0"
-                      Command="{Binding CreatePoolCommand}" />
+              <StackPanel Orientation="Horizontal">
+                <Button Content="Create pool" MinWidth="140" Margin="0,0,8,0"
+                        Background="#0F6CBD" Foreground="White" BorderThickness="0"
+                        Command="{Binding CreatePoolCommand}" />
+
+                <!-- Grows the pool selected on the right. The pool stays mounted throughout. -->
+                <Button MinWidth="140" Content="{Binding AddDrivesLabel}"
+                        Command="{Binding AddDrivesCommand}" />
+              </StackPanel>
+
+              <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,8,0,0"
+                         Text="Adding drives keeps the pool mounted: the extra space appears straight away, and nothing already in the pool moves." />
             </StackPanel>
           </Border>
 

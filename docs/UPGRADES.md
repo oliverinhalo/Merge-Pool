@@ -70,6 +70,13 @@ The UI and the service talk over a named pipe with a versioned protocol
   UI feature-detects rather than guessing. An unknown method comes back as a structured
   `method_not_supported` error, never a dropped connection.
 
+### Protocol history
+
+| Version | Added | Older clients |
+| --- | --- | --- |
+| 1 | The original method set | — |
+| 2 | `pool.addDrives`, capability `poolEdit` | Unaffected: `MinimumSupported` is still 1, and a v1 UI never calls the new method |
+
 ## Config migrations
 
 `ConfigStore` migrates forward only, backs the file up before migrating, preserves unknown fields,

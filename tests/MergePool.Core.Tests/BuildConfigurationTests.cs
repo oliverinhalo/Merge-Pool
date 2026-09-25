@@ -27,6 +27,29 @@ public sealed class BuildConfigurationTests
         }
     }
 
+    [Fact]
+    public void The_installer_version_matches_the_build_version()
+    {
+        // They are declared in two places. If they drift, the installer lays the binaries down in
+        // versions\<installer version> and registers the service against a folder built for a
+        // different one, which only shows up as a service that will not start.
+        var root = RepositoryRoot();
+
+        var build = XDocument.Load(Path.Combine(root, "Directory.Build.props"))
+            .Descendants()
+            .First(element => element.Name.LocalName == "VersionPrefix")
+            .Value
+            .Trim();
+
+        var installer = File
+            .ReadLines(Path.Combine(root, "installer", "MergePool.iss"))
+            .Select(line => line.Trim())
+            .First(line => line.StartsWith("#define AppVersion", StringComparison.Ordinal))
+            .Split('"')[1];
+
+        Assert.Equal(build, installer);
+    }
+
     private static IEnumerable<string> EnumerateBuildFiles()
     {
         var root = RepositoryRoot();

@@ -37,6 +37,7 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
         UnmountCommand = new AsyncCommand(UnmountSelectedPoolAsync, () => SelectedPool is { IsMounted: true });
         RemovePoolCommand = new AsyncCommand(RemoveSelectedPoolAsync, () => SelectedPool is not null);
         RebalanceCommand = new AsyncCommand(RebalanceAsync, () => SelectedPool is not null);
+        AddDrivesCommand = new AsyncCommand(AddDrivesToSelectedPoolAsync, () => CanAddDrives);
 
         _timer = new DispatcherTimer { Interval = RefreshInterval };
         _timer.Tick += async (_, _) => await RefreshAsync(_shutdown.Token).ConfigureAwait(true);
@@ -60,6 +61,8 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
     public AsyncCommand RemovePoolCommand { get; }
 
     public AsyncCommand RebalanceCommand { get; }
+
+    public AsyncCommand AddDrivesCommand { get; }
 
     public string PoolName
     {
@@ -137,6 +140,9 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
                 UnmountCommand.RaiseCanExecuteChanged();
                 RemovePoolCommand.RaiseCanExecuteChanged();
                 RebalanceCommand.RaiseCanExecuteChanged();
+                AddDrivesCommand.RaiseCanExecuteChanged();
+                Raise(nameof(CanAddDrives));
+                Raise(nameof(AddDrivesLabel));
             }
         }
     }
@@ -145,6 +151,20 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
         !string.IsNullOrWhiteSpace(PoolName)
         && !string.IsNullOrWhiteSpace(SelectedMountLetter)
         && Drives.Any(d => d.IsSelected);
+
+    /// <summary>
+    /// Growing a pool needs a pool to grow and a drive to add. A service too old to know the
+    /// method is feature-detected rather than called and failed.
+    /// </summary>
+    public bool CanAddDrives =>
+        SelectedPool is not null
+        && Drives.Any(d => d.IsSelected)
+        && _service.Supports(Capabilities.PoolEdit);
+
+    /// <summary>Label on the add button, so it names the pool the drives would join.</summary>
+    public string AddDrivesLabel => SelectedPool is null
+        ? "Add to pool"
+        : string.Create(CultureInfo.CurrentCulture, $"Add to '{SelectedPool.Name}'");
 
     public async Task StartAsync()
     {
@@ -206,7 +226,9 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
                     if (args.PropertyName == nameof(DriveViewModel.IsSelected))
                     {
                         Raise(nameof(CanCreatePool));
+                        Raise(nameof(CanAddDrives));
                         CreatePoolCommand.RaiseCanExecuteChanged();
+                        AddDrivesCommand.RaiseCanExecuteChanged();
                     }
                 };
 
@@ -265,6 +287,9 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
 
         MountCommand.RaiseCanExecuteChanged();
         UnmountCommand.RaiseCanExecuteChanged();
+        AddDrivesCommand.RaiseCanExecuteChanged();
+        Raise(nameof(CanAddDrives));
+        Raise(nameof(AddDrivesLabel));
     }
 
     /// <summary>Offers letters that no physical drive is using.</summary>
@@ -327,6 +352,58 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
             StatusMessage = string.Create(
                 CultureInfo.CurrentCulture,
                 $"Pool '{pool.Name}' is mounted at {pool.MountPoint}.");
+
+            foreach (var drive in Drives)
+            {
+                drive.IsSelected = false;
+            }
+
+            await RefreshAsync(_shutdown.Token).ConfigureAwait(true);
+        }
+        catch (Exception exception) when (exception is IpcException or IOException)
+        {
+            ErrorMessage = exception.Message;
+            StatusMessage = null;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task AddDrivesToSelectedPoolAsync()
+    {
+        if (SelectedPool is not { } pool)
+        {
+            return;
+        }
+
+        var selected = Drives.Where(d => d.IsSelected).Select(d => d.VolumeId).ToList();
+        if (selected.Count == 0)
+        {
+            return;
+        }
+
+        IsBusy = true;
+        StatusMessage = string.Create(
+            CultureInfo.CurrentCulture,
+            $"Adding {selected.Count} drive(s) to '{pool.Name}'…");
+
+        try
+        {
+            var updated = await _service.InvokeAsync<PoolDto>(
+                Methods.PoolAddDrives,
+                new AddDrivesRequest
+                {
+                    PoolId = pool.PoolId,
+                    VolumeIds = selected,
+                    AdoptExistingContent = AdoptExistingContent,
+                },
+                _shutdown.Token).ConfigureAwait(true);
+
+            StatusMessage = string.Create(
+                CultureInfo.CurrentCulture,
+                $"'{updated.Name}' now spans {updated.Parts.Count} drives. No remount was needed.");
 
             foreach (var drive in Drives)
             {

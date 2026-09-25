@@ -12,6 +12,23 @@ change:
 - **Config schema** — `config.json` `schemaVersion`, migrated forward only, backed up first,
   unknown fields preserved.
 
+## [0.2.0] - 2026-09-25
+
+Data format: unchanged. Config schema: unchanged — a pool simply gains another drive entry, which a
+0.1.0 build reads without migrating.
+
+### Added
+
+- Drives can be added to a pool that already exists, from the same window: select the pool, tick
+  the drives, click **Add to '<pool>'**. The pool is not unmounted — its drive letter stays live,
+  open files are not interrupted, and the extra space appears within a couple of seconds. Nothing
+  already in the pool moves; new writes simply start landing on the new drive too. Adding a drive
+  never touches what is already on it: the only thing written is its own `.PoolPart-{GUID}` folder,
+  unless adoption is explicitly asked for.
+- Wire protocol 2: `pool.addDrives`, announced as the `poolEdit` capability. `MinimumSupported`
+  stays at 1, so a UI built against protocol 1 is unaffected, and a new UI against an old service
+  feature-detects and hides the button rather than calling a method that is not there.
+
 ## [0.1.0] - 2026-09-20
 
 ### Added

@@ -16,7 +16,7 @@ custom kernel driver.
 ### Quick start (Windows)
 
 1. Install the [.NET 8 Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/8.0).
-2. Run `MergePool-0.1.0-setup.exe` as an administrator. It installs WinFsp if you do not have it.
+2. Run `MergePool-0.2.0-setup.exe` as an administrator. It installs WinFsp if you do not have it.
 3. Open MergePool, tick the drives you want, choose a drive letter, click **Create pool**.
 
 Full detail, including what to expect and what to do when something goes wrong, is in
@@ -32,6 +32,8 @@ Full detail, including what to expect and what to do when something goes wrong, 
 - **Leaves your existing data alone.** MergePool only ever writes inside its own `.PoolPart-{GUID}`
   folders. Adopting a drive's existing content into the pool is opt-in, and it is a move within the
   same drive — never a copy between drives.
+- **Grows without downtime.** Add a drive to a pool that is already running: the pool stays
+  mounted, nothing already in it moves, and the new space shows up in seconds.
 - **Never splits a file.** Each file lives whole on one drive; folders may span drives. Renames and
   moves stay on the drive the file is already on, so they are instant.
 - **Survives a drive going away.** Drives are identified by volume GUID, so letters can move. A
@@ -74,9 +76,14 @@ See [docs/UPGRADES.md](docs/UPGRADES.md).
 
 ## Status
 
-Version 0.1.0. All six milestones are in: core pool library, WinFsp mount, placement and throttle
+Version 0.2.0. All six milestones are in: core pool library, WinFsp mount, placement and throttle
 engine, service and IPC, WPF UI, installer and updater.
 
-208 tests pass on Linux and Windows, and CI compiles the full Windows solution against a real WinFsp
-install. What has **not** happened yet is a run on real hardware: mounting, the service install, the
-UI and the installer are compiler-verified but have not been exercised on a physical Windows machine.
+222 tests pass on Linux and Windows. CI compiles the full Windows solution against a real WinFsp
+install and builds the installer, so a `[Code]` change that will not compile fails there rather than
+on a user's machine.
+
+The installer, the service and the UI have now been run on a physical Windows machine: the service
+installs and starts, the UI connects to it and lists the drives. Mounting a pool with WinFsp and the
+placement engine under real IO have not yet been through the same scrutiny, so treat those as
+verified by tests and not by use.

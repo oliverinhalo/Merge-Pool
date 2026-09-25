@@ -190,6 +190,21 @@ public sealed class CreatePoolRequest : IpcContract
     public bool MountImmediately { get; set; } = true;
 }
 
+/// <summary>Adds drives to a pool that already exists. Protocol 2, capability <c>poolEdit</c>.</summary>
+public sealed class AddDrivesRequest : IpcContract
+{
+    [JsonPropertyName("poolId")]
+    public Guid PoolId { get; set; }
+
+    /// <summary>Volume GUIDs of the drives to add.</summary>
+    [JsonPropertyName("volumeIds")]
+    public List<string> VolumeIds { get; set; } = [];
+
+    /// <summary>Move what is already on each added drive into its pool part (same-volume rename).</summary>
+    [JsonPropertyName("adoptExistingContent")]
+    public bool AdoptExistingContent { get; set; }
+}
+
 public sealed class PoolReference : IpcContract
 {
     [JsonPropertyName("poolId")]

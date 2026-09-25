@@ -17,7 +17,7 @@ namespace MergePool.Ipc.Protocol;
 /// </remarks>
 public static class ProtocolVersion
 {
-    public const int Current = 1;
+    public const int Current = 2;
 
     public const int MinimumSupported = 1;
 
@@ -39,11 +39,13 @@ public static class Capabilities
     public const string Metrics = "metrics";
     public const string Rebalance = "rebalance";
     public const string Adoption = "adoption";
+    /// <summary>Changing the drives of a pool that already exists (protocol 2).</summary>
+    public const string PoolEdit = "poolEdit";
     public const string Config = "config";
     public const string Upgrade = "upgrade";
 
     public static IReadOnlyList<string> All { get; } =
-        [Pools, Metrics, Rebalance, Adoption, Config, Upgrade];
+        [Pools, Metrics, Rebalance, Adoption, PoolEdit, Config, Upgrade];
 }
 
 /// <summary>Method names on the wire. Names are permanent: a method is deprecated, never reused.</summary>
@@ -55,6 +57,7 @@ public static class Methods
     public const string PoolsList = "pools.list";
     public const string PoolCreate = "pool.create";
     public const string PoolRemove = "pool.remove";
+    public const string PoolAddDrives = "pool.addDrives";
     public const string PoolMount = "pool.mount";
     public const string PoolUnmount = "pool.unmount";
     public const string PoolStatus = "pool.status";

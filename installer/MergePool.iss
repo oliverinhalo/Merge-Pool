@@ -10,7 +10,7 @@
 
 #define AppName "MergePool"
 #define AppPublisher "MergePool"
-#define AppVersion "0.1.0"
+#define AppVersion "0.2.0"
 #define ServiceName "MergePool"
 #define WinFspUrl "https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-2.0.23075.msi"
 
