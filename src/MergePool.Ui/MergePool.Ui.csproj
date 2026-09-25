@@ -15,6 +15,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!--
+      UseWindowsForms puts System.Windows.Forms into the implicit usings, which makes plain
+      'Application' ambiguous with WPF's in every file. Only TrayPresence needs Windows Forms, and it
+      imports it under an alias, so the global import is removed rather than qualified everywhere.
+    -->
+    <Using Remove="System.Windows.Forms" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Resource Include="Assets\MergePool.ico" />
   </ItemGroup>
 

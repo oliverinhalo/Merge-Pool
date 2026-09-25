@@ -16,8 +16,10 @@ custom kernel driver.
 ### Quick start (Windows)
 
 1. Install the [.NET 8 Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/8.0).
-2. Run `MergePool-0.2.0-setup.exe` as an administrator. It installs WinFsp if you do not have it.
+2. Run `MergePool-0.3.0-setup.exe` as an administrator. It installs WinFsp if you do not have it.
 3. Open MergePool, tick the drives you want, choose a drive letter, click **Create pool**.
+
+That is the only install you have to do by hand: MergePool keeps itself up to date from then on.
 
 Full detail, including what to expect and what to do when something goes wrong, is in
 [docs/INSTALL.md](docs/INSTALL.md).
@@ -32,8 +34,16 @@ Full detail, including what to expect and what to do when something goes wrong, 
 - **Leaves your existing data alone.** MergePool only ever writes inside its own `.PoolPart-{GUID}`
   folders. Adopting a drive's existing content into the pool is opt-in, and it is a move within the
   same drive — never a copy between drives.
-- **Grows without downtime.** Add a drive to a pool that is already running: the pool stays
-  mounted, nothing already in it moves, and the new space shows up in seconds.
+- **Grows and shrinks without downtime.** Add a drive to a running pool and the extra space shows up
+  in seconds, with nothing already in it moved. Take one back out either by leaving its files on it
+  or by moving them onto the remaining drives first — MergePool tells you what would move, refuses
+  if it will not fit, and keeps the drive in the pool if anything could not be moved.
+- **Says what the pool is holding**, as opposed to what its drives are holding. A pooled drive can be
+  full of files that were never pooled; the two figures are measured and shown separately, and the
+  pool's ceiling is its own content plus the space actually free.
+- **Updates itself.** After the first install, new versions are downloaded, checksum-verified,
+  unpacked beside the running one and switched to. Nothing is overwritten, your configuration and
+  pooled files are never touched, and a version that does not come up healthy is rolled back.
 - **Never splits a file.** Each file lives whole on one drive; folders may span drives. Renames and
   moves stay on the drive the file is already on, so they are instant.
 - **Survives a drive going away.** Drives are identified by volume GUID, so letters can move. A
