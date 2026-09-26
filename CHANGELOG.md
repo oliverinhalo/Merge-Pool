@@ -12,6 +12,33 @@ change:
 - **Config schema** — `config.json` `schemaVersion`, migrated forward only, backed up first,
   unknown fields preserved.
 
+## [0.5.0] - 2026-09-26
+
+Data format: unchanged. Config schema: unchanged.
+
+### Fixed
+
+- **An update installed underneath the window, and the window stayed on the old version for ever.**
+  The start-up entry was written with whatever path the window happened to have been started from. A
+  window opened from a version directory — which is what anyone does when the link is broken, or when
+  trying a specific build — wrote that directory into the Run key, so every sign-in afterwards opened
+  that exact version however many updates had installed since. Once the version was pruned, it opened
+  nothing at all. The entry is now written with the version-independent `current` path, and an entry
+  already pinned by an older version is repaired the next time the window starts.
+- **A window started from a version directory now hands over to the newest installed version.** It
+  is the same check the start-up entry used to get wrong, made at the moment it matters: if a newer
+  version is installed, the newer one is started instead and this one exits. Belt and braces for
+  every stale shortcut, pinned Run entry and typed path that already exists on people's machines.
+- **A window left running while an update installed now says so, with a button.** Updates add a
+  version directory and move the link; they cannot reach inside a process that is already running. So
+  a window that is behind the service now shows which version is installed, which one it is, and
+  reopens itself on the installed one when asked. Nothing on any drive is touched.
+- **Setup no longer ends with "CreateProcess failed: code 5".** Its "Open MergePool" tick box started
+  the executable directly, which from an elevated installer means `CreateProcessAsUser` against the
+  signed-in user's token — and on machines where that cannot be used that way it failed, turning an
+  install that had worked into an error dialog. It now opens the Start menu shortcut with
+  `ShellExecute`, which is what Explorer does when the shortcut is clicked.
+
 ## [0.4.1] - 2026-09-25
 
 Data format: unchanged. Config schema: unchanged.

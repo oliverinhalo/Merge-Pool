@@ -1,5 +1,7 @@
 using System.Globalization;
 using System.IO;
+using System.Reflection;
+using MergePool.Core.Update;
 using MergePool.Ipc.Protocol;
 using MergePool.Ui.Services;
 
@@ -25,11 +27,21 @@ public sealed class UpdateViewModel : ViewModelBase
 
         CheckCommand = new AsyncCommand(CheckAsync, () => !_busy && IsSupported);
         InstallCommand = new AsyncCommand(InstallAsync, () => !_busy && UpdateAvailable);
+        RestartWindowCommand = new AsyncCommand(RestartWindowAsync, () => WindowIsStale);
     }
 
     public AsyncCommand CheckCommand { get; }
 
     public AsyncCommand InstallCommand { get; }
+
+    /// <summary>Closes this window and opens the version the service has moved on to.</summary>
+    public AsyncCommand RestartWindowCommand { get; }
+
+    /// <summary>
+    /// Set by the application: opens the given executable and closes this window. Separate from the
+    /// view model so that deciding to restart can be tested without starting a process.
+    /// </summary>
+    public Func<string, bool>? RelaunchWindow { get; set; }
 
     public bool IsSupported => _service.Supports(Capabilities.AutoUpdate);
 
@@ -99,6 +111,57 @@ public sealed class UpdateViewModel : ViewModelBase
         ? "—"
         : string.Join(", ", _status.InstalledVersions);
 
+    /// <summary>The version of MergePool this window itself was built as.</summary>
+    public string WindowVersion { get; } =
+        typeof(UpdateViewModel).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+            is { } informational && informational.Length > 0
+            ? informational.Split('+')[0]
+            : typeof(UpdateViewModel).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+
+    /// <summary>
+    /// The service has restarted onto a newer version than this window is running. An update
+    /// replaces neither: it adds a version and moves the link, so whatever was already open goes on
+    /// running the version it started as until it is opened again.
+    /// </summary>
+    public bool WindowIsStale => RestartTarget is not null;
+
+    public string StaleHeadline => string.Create(
+        CultureInfo.CurrentCulture,
+        $"MergePool {InstalledVersion} is installed and running. This window is still {WindowVersion} — reopen it to catch up.");
+
+    /// <summary>Where a stale window has to restart from to become the installed version.</summary>
+    private string? RestartTarget
+    {
+        get
+        {
+            if (!Version.TryParse(_status?.InstalledVersion, out var service)
+                || !Version.TryParse(WindowVersion, out var window)
+                || service <= window)
+            {
+                return null;
+            }
+
+            try
+            {
+                return VersionHandoff.RestartTargetForVersion(Environment.ProcessPath, _status?.InstalledVersion);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                return null;
+            }
+        }
+    }
+
+    private Task RestartWindowAsync()
+    {
+        if (RestartTarget is { } target && RelaunchWindow?.Invoke(target) != true)
+        {
+            Message = "MergePool could not reopen itself. Close this window and open MergePool again.";
+        }
+
+        return Task.CompletedTask;
+    }
+
     public void Apply(UpdateStatusResult? status)
     {
         var wasAvailable = UpdateAvailable;
@@ -118,9 +181,12 @@ public sealed class UpdateViewModel : ViewModelBase
         Raise(nameof(Headline));
         Raise(nameof(LastChecked));
         Raise(nameof(InstalledVersionsText));
+        Raise(nameof(WindowIsStale));
+        Raise(nameof(StaleHeadline));
 
         CheckCommand.RaiseCanExecuteChanged();
         InstallCommand.RaiseCanExecuteChanged();
+        RestartWindowCommand.RaiseCanExecuteChanged();
 
         if (UpdateAvailable && !wasAvailable)
         {

@@ -5,6 +5,7 @@ using System.Windows;
 using System.Threading;
 using System.Windows.Threading;
 using Microsoft.Win32;
+using MergePool.Core.Update;
 using MergePool.Ui.Services;
 using MergePool.Ui.ViewModels;
 using MergePool.Ui.Views;
@@ -24,6 +25,11 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        if (HandOverToNewerVersion(e.Args))
+        {
+            return;
+        }
+
         _instance = SingleInstance.Acquire();
         if (!_instance.IsFirst)
         {
@@ -35,6 +41,10 @@ public partial class App : Application
         }
 
         DispatcherUnhandledException += OnUnhandledException;
+
+        // An entry written by an older version may name a version directory rather than the link.
+        StartupRegistration.RepairPinnedEntry();
+
         ApplyTheme();
 
         var startHidden = e.Args.Any(argument =>
@@ -48,6 +58,7 @@ public partial class App : Application
 
         _viewModel.Web.CopyToClipboard = CopyToClipboard;
         _viewModel.Web.OpenInBrowser = OpenInExplorer;
+        _viewModel.Updates.RelaunchWindow = RelaunchWindow;
 
         _window = new MainWindow { DataContext = _viewModel };
         _window.Closing += OnWindowClosing;
@@ -67,6 +78,93 @@ public partial class App : Application
         }
 
         await _viewModel.StartAsync();
+    }
+
+    /// <summary>
+    /// Starts the newest installed version instead of this one, when this one was launched from a
+    /// version directory and a newer version has since been installed. Returns whether it did.
+    /// </summary>
+    /// <remarks>
+    /// This runs before anything else, and before the single-instance check in particular: the
+    /// version being handed to has to be free to take the instance, which it cannot do while this
+    /// process is holding it. A hand-over only ever moves forward to a version that exists on disk,
+    /// so it cannot loop.
+    /// </remarks>
+    private bool HandOverToNewerVersion(string[] arguments)
+    {
+        string? newer;
+
+        try
+        {
+            newer = VersionHandoff.NewerExecutable(Environment.ProcessPath);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+
+        if (newer is null || !Restart(newer, arguments))
+        {
+            // Carrying on as the older version is a worse outcome than not, but it is a working
+            // window, which is better than no window at all.
+            return false;
+        }
+
+        Shutdown();
+        return true;
+    }
+
+    /// <summary>
+    /// Replaces this window with the one at <paramref name="executable"/>, which is how a window
+    /// left behind by an update catches up.
+    /// </summary>
+    /// <remarks>
+    /// The single-instance hold goes first: the version being started has to be able to take it,
+    /// and it cannot while this process is holding it — it would signal this window and exit, and
+    /// nothing would have changed. If starting the new copy fails, the hold is taken back, because
+    /// running without it is how a second window ends up open.
+    /// </remarks>
+    private bool RelaunchWindow(string executable)
+    {
+        _instance?.Dispose();
+        _instance = null;
+
+        // No --tray: the person asked for this window, so the new one opens in front of them.
+        if (!Restart(executable, []))
+        {
+            _instance = SingleInstance.Acquire();
+            _instance.ListenForActivation(() => Dispatcher.Invoke(ShowWindow));
+            return false;
+        }
+
+        _reallyExiting = true;
+        Shutdown();
+        return true;
+    }
+
+    /// <summary>Launches another copy of MergePool's window with this one's arguments.</summary>
+    private static bool Restart(string executable, IEnumerable<string> arguments)
+    {
+        try
+        {
+            var start = new ProcessStartInfo
+            {
+                FileName = executable,
+                WorkingDirectory = Path.GetDirectoryName(executable) ?? string.Empty,
+                UseShellExecute = false,
+            };
+
+            foreach (var argument in arguments)
+            {
+                start.ArgumentList.Add(argument);
+            }
+
+            return Process.Start(start) is not null;
+        }
+        catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or IOException or InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     /// <summary>Follows the system's app theme, since the window has no theme picker of its own.</summary>

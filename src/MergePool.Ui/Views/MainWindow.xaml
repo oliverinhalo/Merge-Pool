@@ -90,6 +90,29 @@
                   Command="{Binding Updates.InstallCommand}" />
         </Grid>
       </Border>
+
+      <!-- An update has already installed underneath this window. Reopening is the whole fix. -->
+      <Border Background="{DynamicResource AccentSoftBrush}" BorderBrush="{DynamicResource AccentBrush}"
+              BorderThickness="1" CornerRadius="{StaticResource CardRadius}" Padding="14,11" Margin="0,0,0,12"
+              Visibility="{Binding Updates.WindowIsStale, Converter={StaticResource BoolToVisibility}}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+
+          <StackPanel Grid.Column="0" VerticalAlignment="Center">
+            <TextBlock Text="{Binding Updates.StaleHeadline}" FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" />
+            <TextBlock Style="{StaticResource Caption}" Margin="0,3,0,0"
+                       Text="Your pools are already on the new version — the service restarted onto it. Only this window is behind, and reopening it changes nothing on your drives." />
+          </StackPanel>
+
+          <Button Grid.Column="1" Style="{StaticResource PrimaryButton}" Content="Reopen MergePool"
+                  VerticalAlignment="Center" Margin="14,0,0,0" MinWidth="148"
+                  Command="{Binding Updates.RestartWindowCommand}" />
+        </Grid>
+      </Border>
     </StackPanel>
 
     <!-- Body -->

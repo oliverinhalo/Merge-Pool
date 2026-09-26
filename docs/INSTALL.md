@@ -292,6 +292,25 @@ what went wrong and which versions are on disk. A failed version is not retried 
 If the download keeps failing, the machine may not be able to reach GitHub. Turning off automatic
 checks stops MergePool trying, and you can install by hand from the releases page whenever you like.
 
+**The window is an older version than the one that is installed**
+
+An update adds a version directory and moves the `current` link; it cannot reach inside a window that
+is already open, so a window left running keeps being the version it was started as. It now says so
+across the top, with a **Reopen MergePool** button that restarts it on the installed version. Your
+pools are already on the new version either way — the service restarted onto it.
+
+If the window is opened from a path naming a version directory, such as
+`C:\Program Files\MergePool\versions\0.4.0\MergePool.exe`, it hands over to the newest installed
+version on start-up rather than opening the old one. Shortcuts should point at
+`C:\Program Files\MergePool\current\MergePool.exe`, which always resolves to the installed version.
+
+**Setup ended with "CreateProcess failed: code 5"**
+
+That was setup's own "Open MergePool" tick box, not the install — everything was installed and the
+service was registered. It came from an elevated installer starting a non-elevated window against the
+signed-in user's token, which some machines refuse. Setup now opens the Start menu shortcut instead.
+On a version that still does it, close the dialog and open MergePool from the Start menu.
+
 **The web page will not load from another device**
 
 Three things, in order. Is **Let other devices on my network reach it** ticked — without it only this
