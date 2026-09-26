@@ -12,6 +12,39 @@ change:
 - **Config schema** — `config.json` `schemaVersion`, migrated forward only, backed up first,
   unknown fields preserved.
 
+## [0.6.0] - 2026-09-26
+
+Data format: unchanged. Config schema: unchanged.
+
+### Added
+
+- **"Open the web page" in the notification-area menu.** Right-click MergePool beside the clock and
+  it is there, next to "Open MergePool". It turns the web interface on if it is off — on port 8787
+  unless another port has been chosen — and opens it in a browser, signed in. It needs the window no
+  more than the service does, which is the point of a web interface.
+- **The same one-button action at the top of the Remote tab.** Previously the only way in was to tick
+  a box, set a port, then find "Open in browser" further down the panel, and the open button only
+  appeared once something was already listening. Now the first thing in the tab is a button that does
+  the whole thing.
+- **The page accepts its token from the URL fragment**, which is how MergePool hands it over: a
+  fragment is never sent to the server, so the token appears in no request, log or proxy on the way
+  there, and the page takes it out of the address bar as soon as it has it.
+
+### Changed
+
+- **Setup says when it is updating rather than installing.** It reads the version already on the
+  machine and names it: the folder page, the summary before it starts and the last page all say
+  "MergePool 0.5.0 is installed. This will update it to 0.6.0", that the pools, the files on the
+  drives and every setting are kept, and that the previous version is removed once the new one runs.
+  Reinstalling the same version says that instead.
+- **The version that was replaced is removed once the new one is running.** Setup waits for the
+  service to report RUNNING on the new version and only then deletes the other version directories;
+  if it does not come up, every older version stays exactly where it is to fall back to. In-app
+  updates do the same, keeping one version instead of two — pruning is the last step of an upgrade
+  and runs only after the health check passes, so a rollback is unaffected.
+- The port box now takes its range and default from the one place they are defined, rather than
+  repeating 1024, 65535 and 8787 in the window.
+
 ## [0.5.0] - 2026-09-26
 
 Data format: unchanged. Config schema: unchanged.

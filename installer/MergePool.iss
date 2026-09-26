@@ -13,13 +13,14 @@
 #ifndef AppVersion
   ; build.ps1 passes /DAppVersion from Directory.Build.props. This is only the fallback for
   ; compiling the script straight from the Inno Setup IDE.
-  #define AppVersion "0.5.0"
+  #define AppVersion "0.6.0"
 #endif
+#define AppGuid "{6F0B2A1C-4E9D-4E6A-9E4F-3D1F1D4E7C21}"
 #define ServiceName "MergePool"
 #define WinFspUrl "https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-2.0.23075.msi"
 
 [Setup]
-AppId={{6F0B2A1C-4E9D-4E6A-9E4F-3D1F1D4E7C21}
+AppId={{#AppGuid}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
@@ -96,6 +97,76 @@ var
   // Set while installing: true when MergePool was already installed, i.e. this is an upgrade and
   // PrepareToInstall stopped a service that has to be put back.
   UpgradingExistingInstall: Boolean;
+  // The version already on the machine, read before anything is installed. Empty on a first install.
+  PreviousVersion: String;
+
+// The newest version directory of an existing install, or '' when there is none. The filesystem is
+// the fallback for the registry: what is on disk is what MergePool actually runs.
+function NewestInstalledVersionOnDisk: String;
+var
+  Root: String;
+  FindRec: TFindRec;
+begin
+  Result := '';
+  Root := ExpandConstant('{app}\versions\');
+
+  if not FindFirst(Root + '*', FindRec) then
+    Exit;
+
+  try
+    repeat
+      if ((FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0)
+         and (FindRec.Name <> '.') and (FindRec.Name <> '..')
+         and (CompareStr(FindRec.Name, Result) > 0) then
+        Result := FindRec.Name;
+    until not FindNext(FindRec);
+  finally
+    FindClose(FindRec);
+  end;
+end;
+
+// The version recorded by whichever MergePool installed last. Setup is told what it is replacing
+// rather than guessing, so it can say so instead of calling every run an install.
+//
+// The 64-bit view is read first and explicitly. Setup installs in 64-bit mode, so that is where its
+// own uninstall entry goes — while a plain HKLM read from Pascal Script lands in the 32-bit view,
+// which is the long-standing way to look straight past it.
+function InstalledVersion: String;
+var
+  Key, Found: String;
+begin
+  Key := 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{#AppGuid}_is1';
+
+  if RegQueryStringValue(HKLM64, Key, 'DisplayVersion', Found) and (Found <> '') then
+  begin
+    Result := Found;
+    Exit;
+  end;
+
+  if RegQueryStringValue(HKLM32, Key, 'DisplayVersion', Found) and (Found <> '') then
+  begin
+    Result := Found;
+    Exit;
+  end;
+
+  Result := NewestInstalledVersionOnDisk;
+end;
+
+function IsUpdate: Boolean;
+begin
+  Result := PreviousVersion <> '';
+end;
+
+// What this run is actually doing, in one sentence, for the wizard to show.
+function WhatThisRunDoes: String;
+begin
+  if not IsUpdate then
+    Result := 'MergePool {#AppVersion} will be installed.'
+  else if CompareText(PreviousVersion, '{#AppVersion}') = 0 then
+    Result := 'MergePool {#AppVersion} is already installed. This will reinstall it.'
+  else
+    Result := 'MergePool ' + PreviousVersion + ' is installed. This will update it to {#AppVersion}.';
+end;
 
 function WinFspInstalled: Boolean;
 begin
@@ -228,9 +299,102 @@ begin
     RunHidden(Sc, 'start {#ServiceName}');
 end;
 
+// sc start returns as soon as the request is accepted, so RUNNING has to be waited for. Whether the
+// service actually came up decides whether the previous version can be removed.
+function ServiceIsRunning: Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := Exec(ExpandConstant('{cmd}'), '/c sc query {#ServiceName} | find "RUNNING"', '',
+                 SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+end;
+
+function WaitForServiceRunning(Seconds: Integer): Boolean;
+var
+  Waited: Integer;
+begin
+  Waited := 0;
+  Result := ServiceIsRunning;
+
+  while (not Result) and (Waited < Seconds * 1000) do
+  begin
+    Sleep(500);
+    Waited := Waited + 500;
+    Result := ServiceIsRunning;
+  end;
+end;
+
+// Removes every version directory but the one just installed. Only ever called once the new version
+// is running, so what goes is genuinely dead weight; and DelTree failing on a file some other
+// process still has open is fine, because housekeeping must never fail an install.
+procedure RemoveOtherVersions(KeepVersion: String);
+var
+  Root: String;
+  FindRec: TFindRec;
+begin
+  Root := ExpandConstant('{app}\versions\');
+
+  if not FindFirst(Root + '*', FindRec) then
+    Exit;
+
+  try
+    repeat
+      if ((FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0)
+         and (FindRec.Name <> '.') and (FindRec.Name <> '..')
+         and (CompareText(FindRec.Name, KeepVersion) <> 0) then
+        DelTree(Root + FindRec.Name, True, True, True);
+    until not FindNext(FindRec);
+  finally
+    FindClose(FindRec);
+  end;
+end;
+
 procedure InitializeWizard;
 begin
+  PreviousVersion := InstalledVersion;
+
   DownloadPage := CreateDownloadPage(SetupMessage(msgWizardPreparing), SetupMessage(msgPreparingDesc), nil);
+
+  if IsUpdate then
+  begin
+    // Every page that would otherwise say "install" says what is really happening. An update keeps
+    // the pools, the files on the drives and every setting, and saying so is the point.
+    WizardForm.Caption := 'Update MergePool';
+    WizardForm.SelectDirLabel.Caption :=
+      WhatThisRunDoes + #13#10#13#10 +
+      'It is installed here. Your pools, the files on your drives and your settings are kept — an ' +
+      'update only adds the new version alongside and switches which one runs.';
+  end;
+end;
+
+function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo, MemoTypeInfo,
+  MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
+begin
+  Result := WhatThisRunDoes + NewLine;
+
+  if IsUpdate then
+    Result := Result + Space + 'Your pools, your files and your settings are kept.' + NewLine +
+              Space + 'The previous version is removed once the new one is running.' + NewLine;
+
+  Result := Result + NewLine;
+
+  if MemoDirInfo <> '' then
+    Result := Result + MemoDirInfo + NewLine + NewLine;
+
+  if MemoGroupInfo <> '' then
+    Result := Result + MemoGroupInfo + NewLine + NewLine;
+
+  if MemoTasksInfo <> '' then
+    Result := Result + MemoTasksInfo + NewLine;
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if (CurPageID = wpFinished) and IsUpdate then
+    WizardForm.FinishedLabel.Caption :=
+      'MergePool has been updated to {#AppVersion}.' + #13#10#13#10 +
+      'Your pools are mounted again by the service, your files were never touched, and your ' +
+      'settings carried over. The previous version has been removed.';
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -274,6 +438,12 @@ begin
   begin
     // Through the link, so an upgrade only has to repoint it.
     RegisterService(ExpandConstant('{app}\current\MergePool.Service.exe'));
+
+    // Only once this version is actually running is the one it replaced safe to remove. If it did
+    // not come up, every older version stays exactly where it is to fall back to.
+    if (not ShouldStartService) or WaitForServiceRunning(30) then
+      RemoveOtherVersions('{#AppVersion}');
+
     Exit;
   end;
 

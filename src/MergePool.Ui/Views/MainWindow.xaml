@@ -521,6 +521,14 @@
                 <TextBlock Style="{StaticResource Body}" Margin="0,0,0,14"
                            Text="Turn this on and MergePool answers on a port of your choosing: the same pools, drives and controls as this window, in a browser on this computer or on your phone. The service does the serving, so it keeps working whether or not this window is open." />
 
+                <!-- One button for the whole thing: on, and open, already signed in. The same action
+                     is in the notification-area menu, which is where people look for it. -->
+                <Button Content="Open the web page" Style="{StaticResource PrimaryButton}"
+                        HorizontalAlignment="Left" MinWidth="176" Margin="0,0,0,6"
+                        Command="{Binding Web.OpenWebPageCommand}" />
+                <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,16"
+                           Text="Turns it on if it is off, on the port below, and opens it in your browser signed in. It is also in the MergePool menu in the notification area." />
+
                 <Border Style="{StaticResource InsetCard}" Margin="0,0,0,16">
                   <StackPanel>
                     <CheckBox IsChecked="{Binding Web.Enabled, Mode=TwoWay}" Margin="0,0,0,12">
