@@ -13,7 +13,7 @@
 #ifndef AppVersion
   ; build.ps1 passes /DAppVersion from Directory.Build.props. This is only the fallback for
   ; compiling the script straight from the Inno Setup IDE.
-  #define AppVersion "0.4.1"
+  #define AppVersion "0.5.0"
 #endif
 #define ServiceName "MergePool"
 #define WinFspUrl "https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-2.0.23075.msi"
@@ -71,11 +71,14 @@ Filename: "msiexec.exe"; Parameters: "/i ""{tmp}\winfsp.msi"" /qn /norestart"; \
 ; ssPostInstall is where {app}\current is created — so a [Run] entry would register the service
 ; against a path that does not exist yet and then fail to start it, on every fresh install.
 
-; Launched from the version directory rather than through the link, so this one convenience does not
-; depend on the link, and as the signed-in user rather than the administrator who ran setup: the
-; window is asInvoker by design and keeps its settings under that user's own registry.
-Filename: "{app}\versions\{#AppVersion}\MergePool.exe"; Description: "Open MergePool"; \
-  Flags: postinstall nowait skipifsilent runasoriginaluser
+; Opened through the Start menu shortcut, with shellexec, rather than by starting the executable
+; directly. Setup is elevated and the window is asInvoker by design, so starting it directly means
+; CreateProcessAsUser against the signed-in user's token — which fails with "CreateProcess failed:
+; code 5" on machines where that token cannot be used that way, and turns a convenience into an
+; error dialog at the end of an install that actually worked. ShellExecute on the shortcut is what
+; Explorer itself does when the user clicks it.
+Filename: "{group}\{#AppName}.lnk"; Description: "Open MergePool"; \
+  Flags: postinstall nowait skipifsilent shellexec runasoriginaluser
 
 [UninstallRun]
 ; Stop and remove the service. Pool parts and their files are deliberately left on the drives.

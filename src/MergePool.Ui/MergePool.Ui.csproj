@@ -17,6 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\MergePool.Core\MergePool.Core.csproj" />
     <ProjectReference Include="..\MergePool.Ipc\MergePool.Ipc.csproj" />
   </ItemGroup>
 
