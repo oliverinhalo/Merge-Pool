@@ -168,6 +168,38 @@ public sealed class UpgradeCoordinatorTests
     }
 
     [Fact]
+    public async Task By_default_only_the_version_that_ends_up_running_is_kept()
+    {
+        using var install = new FakeInstall("1.0.0", "1.1.0", "1.2.0");
+        install.Link.PointAt("1.1.0");
+
+        await install.Coordinator(new UpgradeOptions()).UpgradeAsync("1.2.0", CancellationToken.None);
+
+        Assert.True(install.Layout.VersionExists("1.2.0"));
+        Assert.False(install.Layout.VersionExists("1.1.0"));
+        Assert.False(install.Layout.VersionExists("1.0.0"));
+    }
+
+    [Fact]
+    public async Task Keeping_only_one_version_still_leaves_a_rollback_possible()
+    {
+        // Pruning is the last step of a successful upgrade, so the version being replaced is still
+        // on disk for the whole of the window in which a rollback could be needed.
+        using var install = new FakeInstall("1.0.0", "1.1.0");
+        install.Link.PointAt("1.0.0");
+
+        install.Engine.QueueHealth(
+            new EngineHealth(false, ["Pool 'Media' is not mounted at P:."], "1.1.0"),
+            new EngineHealth(true, [], "1.0.0"));
+
+        var result = await install.Coordinator(new UpgradeOptions()).UpgradeAsync("1.1.0", CancellationToken.None);
+
+        Assert.Equal(UpgradeOutcome.RolledBack, result.Outcome);
+        Assert.Equal("1.0.0", install.Link.ReadCurrentVersion());
+        Assert.True(install.Layout.VersionExists("1.0.0"));
+    }
+
+    [Fact]
     public async Task Old_versions_are_pruned_but_the_rollback_target_is_kept()
     {
         using var install = new FakeInstall("1.0.0", "1.1.0", "1.2.0", "1.3.0");

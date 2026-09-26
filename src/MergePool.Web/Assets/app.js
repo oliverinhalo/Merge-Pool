@@ -318,8 +318,32 @@ el("signout").addEventListener("click", () => {
   showSignin("");
 });
 
+// A token handed over in the URL fragment, which is how MergePool opens this page for you. A
+// fragment is never sent to the server, so it is not in any request, log or proxy on the way here.
+// It is taken out of the address bar straight away so it is not left sitting in history.
+function takeTokenFromFragment() {
+  const match = /(?:^|[#&])token=([^&]+)/.exec(location.hash || "");
+  if (!match) {
+    return;
+  }
+
+  try {
+    setToken(decodeURIComponent(match[1]));
+  } catch {
+    setToken(match[1]);
+  }
+
+  try {
+    history.replaceState(null, "", location.pathname + location.search);
+  } catch {
+    location.hash = "";
+  }
+}
+
 // Straight in if the token from a previous visit still works.
 (async () => {
+  takeTokenFromFragment();
+
   if (!token()) {
     showSignin("");
     return;

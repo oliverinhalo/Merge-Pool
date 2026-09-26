@@ -65,7 +65,7 @@ public partial class App : Application
 
         // The window can be closed without the app going away: MergePool is a thing you leave
         // running, and the tray is where it lives when it is not in front of you.
-        _tray = new TrayPresence(ShowWindow, ExitForReal);
+        _tray = new TrayPresence(ShowWindow, OpenWebPage, ExitForReal);
         _viewModel.StatusChanged += (_, status) => _tray?.SetStatus(status);
         _viewModel.Updates.NewVersionFound += (_, version) =>
             _tray?.Notify("MergePool update", $"Version {version} is available and will install itself.");
@@ -210,6 +210,26 @@ public partial class App : Application
         _window.Activate();
         _window.Topmost = true;
         _window.Topmost = false;
+    }
+
+    /// <summary>
+    /// Turns the web interface on if it is off and opens it in a browser. Reached from the
+    /// notification area, so it works without the window ever being opened.
+    /// </summary>
+    private async void OpenWebPage()
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        await _viewModel.Web.OpenWebPageAsync();
+
+        // Nothing opened, and there is no window in front of anyone to read the reason in.
+        if (!_viewModel.Web.IsListening && _viewModel.Web.Message is { Length: > 0 } problem)
+        {
+            _tray?.Notify("MergePool web page", problem, warning: true);
+        }
     }
 
     /// <summary>Closing the window hides it. Quitting is a deliberate act, from the tray menu.</summary>

@@ -173,7 +173,12 @@ upgrades an existing install in place.
 MergePool can serve a small web page on a port you choose, so you can check the pools or mount a
 drive from a phone, a laptop, or another PC. It is **off until you turn it on**.
 
-In the **Remote** tab of the MergePool window:
+The quickest way in is the **MergePool** icon beside the clock: right-click it and choose **Open the
+web page**. That turns the interface on if it is off, on port 8787 unless you have chosen another, and
+opens it in your browser already signed in. The **Open the web page** button at the top of the
+**Remote** tab does exactly the same thing.
+
+To set it up by hand, in the **Remote** tab of the MergePool window:
 
 1. Tick **Control MergePool from a browser**.
 2. Set the **port**. Anything from 1024 to 65535; 8787 is the default. If something else is already

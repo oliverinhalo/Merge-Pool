@@ -1,8 +1,10 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
+using MergePool.Core.Config;
 
 namespace MergePool.Ui.Services;
 
@@ -25,6 +27,7 @@ public sealed class TrayPresence : IDisposable
     private const int WmRightButtonUp = 0x0205;
 
     private readonly Action _show;
+    private readonly Action _openWebPage;
     private readonly Action _exit;
     private readonly HwndSource _messageWindow;
     private readonly ContextMenu _menu;
@@ -35,9 +38,10 @@ public sealed class TrayPresence : IDisposable
     private bool _added;
     private bool _disposed;
 
-    public TrayPresence(Action show, Action exit)
+    public TrayPresence(Action show, Action openWebPage, Action exit)
     {
         _show = show ?? throw new ArgumentNullException(nameof(show));
+        _openWebPage = openWebPage ?? throw new ArgumentNullException(nameof(openWebPage));
         _exit = exit ?? throw new ArgumentNullException(nameof(exit));
 
         // A message-only window: never shown, never in the taskbar, exists purely to receive the
@@ -110,11 +114,24 @@ public sealed class TrayPresence : IDisposable
         var open = new MenuItem { Header = "Open MergePool", FontWeight = FontWeights.SemiBold };
         open.Click += (_, _) => _show();
 
+        // The web page is here because this is where people look for it, and because it is the one
+        // way into MergePool that does not need this window at all.
+        var web = new MenuItem
+        {
+            Header = "Open the web page",
+            ToolTip = string.Create(
+                CultureInfo.CurrentCulture,
+                $"Serves MergePool in a browser, on port {WebOptions.DefaultPort} unless you have chosen another. Turns it on if it is off."),
+        };
+
+        web.Click += (_, _) => _openWebPage();
+
         var quit = new MenuItem { Header = "Quit" };
         quit.Click += (_, _) => _exit();
 
         var menu = new ContextMenu { StaysOpen = false };
         menu.Items.Add(open);
+        menu.Items.Add(web);
         menu.Items.Add(new Separator());
         menu.Items.Add(quit);
         return menu;

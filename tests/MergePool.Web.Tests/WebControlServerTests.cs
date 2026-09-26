@@ -62,6 +62,19 @@ public sealed class WebControlServerTests : IDisposable
     }
 
     [Fact]
+    public async Task The_page_takes_a_token_handed_to_it_in_the_url_fragment()
+    {
+        // This is how MergePool opens the page for you: the fragment never leaves the browser, so
+        // the token is in no request, log or proxy on the way here, and the page clears it from the
+        // address bar. Losing this silently would turn one click back into copy-and-paste.
+        var script = await _fixture.Client.GetStringAsync("/app.js");
+
+        Assert.Contains("token=", script, StringComparison.Ordinal);
+        Assert.Contains("location.hash", script, StringComparison.Ordinal);
+        Assert.Contains("history.replaceState", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Data_without_a_token_is_refused()
     {
         var response = await _fixture.Client.GetAsync("/api/pools");

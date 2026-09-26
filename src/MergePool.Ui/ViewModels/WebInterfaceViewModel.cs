@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO;
+using MergePool.Core.Config;
 using MergePool.Ipc.Protocol;
 using MergePool.Ui.Services;
 
@@ -15,7 +16,7 @@ public sealed class WebInterfaceViewModel : ViewModelBase
     private readonly Func<CancellationToken> _token;
 
     private WebInterfaceResult? _state;
-    private string _portText = "8787";
+    private string _portText = WebOptions.DefaultPort.ToString(CultureInfo.InvariantCulture);
     private string? _message;
     private bool _tokenVisible;
     private bool _busy;
@@ -30,6 +31,7 @@ public sealed class WebInterfaceViewModel : ViewModelBase
         CopyTokenCommand = new AsyncCommand(CopyTokenAsync, () => !string.IsNullOrEmpty(AccessToken));
         CopyUrlCommand = new AsyncCommand(CopyUrlAsync, () => !string.IsNullOrEmpty(Url));
         OpenCommand = new AsyncCommand(OpenAsync, () => !string.IsNullOrEmpty(Url));
+        OpenWebPageCommand = new AsyncCommand(OpenWebPageAsync, () => !_busy && IsSupported);
     }
 
     public AsyncCommand ApplyPortCommand { get; }
@@ -41,6 +43,12 @@ public sealed class WebInterfaceViewModel : ViewModelBase
     public AsyncCommand CopyUrlCommand { get; }
 
     public AsyncCommand OpenCommand { get; }
+
+    /// <summary>
+    /// Turns the web interface on if it is off and opens it in a browser, signed in. One action,
+    /// because "show me the web page" is one thought — and it is what the notification area offers.
+    /// </summary>
+    public AsyncCommand OpenWebPageCommand { get; }
 
     /// <summary>Set by the window: copying and opening a browser are its business, not the model's.</summary>
     public Action<string>? CopyToClipboard { get; set; }
@@ -72,11 +80,15 @@ public sealed class WebInterfaceViewModel : ViewModelBase
 
     public bool PortIsValid =>
         int.TryParse(PortText, NumberStyles.None, CultureInfo.InvariantCulture, out var port)
-        && port is >= 1024 and <= 65535;
+        && WebOptions.IsUsablePort(port);
 
     public string PortHint => PortIsValid
-        ? "Any port from 1024 to 65535. 8787 is the default."
-        : "Enter a port between 1024 and 65535.";
+        ? string.Create(
+            CultureInfo.CurrentCulture,
+            $"Any port from {WebOptions.MinimumPort} to {WebOptions.MaximumPort}. {WebOptions.DefaultPort} is the default.")
+        : string.Create(
+            CultureInfo.CurrentCulture,
+            $"Enter a port between {WebOptions.MinimumPort} and {WebOptions.MaximumPort}.");
 
     /// <summary>False means this computer only; true means anything that can reach this machine.</summary>
     public bool ReachableFromNetwork
@@ -198,6 +210,7 @@ public sealed class WebInterfaceViewModel : ViewModelBase
         CopyTokenCommand.RaiseCanExecuteChanged();
         CopyUrlCommand.RaiseCanExecuteChanged();
         OpenCommand.RaiseCanExecuteChanged();
+        OpenWebPageCommand.RaiseCanExecuteChanged();
     }
 
     private Task ApplyPortAsync() =>
@@ -239,6 +252,7 @@ public sealed class WebInterfaceViewModel : ViewModelBase
             _busy = false;
             ApplyPortCommand.RaiseCanExecuteChanged();
             RegenerateTokenCommand.RaiseCanExecuteChanged();
+            OpenWebPageCommand.RaiseCanExecuteChanged();
         }
     }
 
@@ -295,9 +309,50 @@ public sealed class WebInterfaceViewModel : ViewModelBase
     {
         if (Url is { } url)
         {
-            OpenInBrowser?.Invoke(url);
+            OpenInBrowser?.Invoke(SignedIn(url));
         }
 
         return Task.CompletedTask;
     }
+
+    /// <summary>
+    /// Turns the interface on if it is not already listening, then opens it. Returns once the
+    /// browser has been asked to open, or once there is a reason in <see cref="Message"/> why not.
+    /// </summary>
+    public async Task OpenWebPageAsync()
+    {
+        if (!IsSupported)
+        {
+            Message = "This copy of the MergePool service is too old to serve a web page. Update MergePool.";
+            return;
+        }
+
+        if (_state is not { Enabled: true, State: "Listening" })
+        {
+            // Whatever port is already configured, unless nothing usable is — then the default.
+            var port = PortIsValid
+                ? int.Parse(PortText, NumberStyles.None, CultureInfo.InvariantCulture)
+                : WebOptions.DefaultPort;
+
+            await ApplyAsync(new WebInterfaceSettingsDto { Enabled = true, Port = port }).ConfigureAwait(true);
+        }
+
+        if (Url is { } url && IsListening)
+        {
+            OpenInBrowser?.Invoke(SignedIn(url));
+            Message = string.Create(CultureInfo.CurrentCulture, $"Opening {url} in your browser.");
+            return;
+        }
+
+        Message ??= "MergePool could not open the web page.";
+    }
+
+    /// <summary>
+    /// The address with the token in the fragment, so the browser arrives signed in. A fragment is
+    /// never sent to the server, so the token is not in any request or log on the way there, and the
+    /// page takes it out of the address bar as soon as it has it.
+    /// </summary>
+    private string SignedIn(string url) => string.IsNullOrEmpty(AccessToken)
+        ? url
+        : url + "#token=" + Uri.EscapeDataString(AccessToken);
 }

@@ -12,8 +12,16 @@ public sealed record UpgradeOptions
 
     public TimeSpan HealthCheckTimeout { get; init; } = TimeSpan.FromSeconds(60);
 
-    /// <summary>Old versions kept on disk after a successful upgrade, so a rollback stays possible.</summary>
-    public int KeepVersions { get; init; } = 2;
+    /// <summary>
+    /// How many version directories are kept after a successful upgrade, the running one included.
+    /// One means the version that was replaced is removed.
+    /// </summary>
+    /// <remarks>
+    /// Rollback does not need a version kept here. Pruning is the last step of an upgrade and only
+    /// runs once the new version has passed its health check — up to that point the previous version
+    /// is still on disk, which is exactly when a rollback would want it.
+    /// </remarks>
+    public int KeepVersions { get; init; } = 1;
 
     /// <summary>Ignore an unreachable engine when draining (e.g. the service is already stopped).</summary>
     public bool AllowDrainFailure { get; init; } = true;
