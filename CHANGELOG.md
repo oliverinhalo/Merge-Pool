@@ -41,8 +41,24 @@ and to the root with defaults, and a 0.6.0 build reads the file without migratin
   `duplication.get`, `duplication.setRule`, `duplication.removeRule`, `duplication.setOptions` and
   `duplication.runNow` with capability `duplication`. `MinimumSupported` stays 1.
 
+### Changed
+
+- **An update now needs nothing from you.** Checking and installing were already automatic; what was
+  not was the window, which stayed on the old version until it was clicked. It now reopens itself on
+  the new one — straight away if it is sitting in the notification area, and after twenty seconds if
+  it is in front of you, so the banner has been readable for a moment and a click does not land in a
+  window that is disappearing. **Reopen this window on the new version by itself** in Settings turns
+  it off for anyone who would rather be asked.
+
 ### Fixed
 
+- **An update could delete the version a sign-in entry still named.** Versions before 0.5.0 wrote the
+  window's own path into the user's Run key, so an entry can name a version directory rather than the
+  version-independent one. With old versions now removed after an update, pruning could delete exactly
+  what that entry pointed at, and sign-in would open nothing at all with no explanation. The updater
+  reads the Run entries of every loaded user hive and keeps any version they name, until the window
+  repairs its own entry the next time it starts. It only reads: quietly editing a signed-out user's
+  registry is not an updater's business.
 - **A rename moved only the copy the pool was reading, so the old name came back.** `PoolOperations`
   renamed the file on the drive that won the union's newest-wins comparison and left the others under
   the old name — and a listing is the union of every drive, so the old name simply reappeared. Every

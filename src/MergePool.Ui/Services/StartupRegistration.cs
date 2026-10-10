@@ -25,6 +25,50 @@ public static class StartupRegistration
     /// <summary>The window is launched into the notification area, not in the user's face.</summary>
     public const string TrayArgument = "--tray";
 
+    private const string PreferencesKey = @"Software\MergePool";
+
+    private const string SeamlessValueName = "SeamlessRestart";
+
+    /// <summary>
+    /// Whether the window reopens itself on a new version instead of waiting to be asked. On by
+    /// default: an update that needs a click is not an automatic update.
+    /// </summary>
+    /// <remarks>
+    /// Kept beside the start-up entry, under the current user, for the same reason: it is a
+    /// preference about this person's window, not about the pools the service is serving.
+    /// </remarks>
+    public static bool SeamlessRestartEnabled()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(PreferencesKey);
+            return key?.GetValue(SeamlessValueName) is not int value || value != 0;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            return true;
+        }
+    }
+
+    public static bool SetSeamlessRestart(bool enabled)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.CreateSubKey(PreferencesKey, writable: true);
+            if (key is null)
+            {
+                return false;
+            }
+
+            key.SetValue(SeamlessValueName, enabled ? 1 : 0, RegistryValueKind.DWord);
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            return false;
+        }
+    }
+
     public static bool IsEnabled()
     {
         try

@@ -25,6 +25,14 @@ public sealed record UpgradeOptions
 
     /// <summary>Ignore an unreachable engine when draining (e.g. the service is already stopped).</summary>
     public bool AllowDrainFailure { get; init; } = true;
+
+    /// <summary>
+    /// Asked, just before pruning, which version directories something still names directly. A
+    /// start-up entry written by a version before 0.5.0 holds a version path rather than the
+    /// version-independent one, and deleting what it names would leave that person with nothing
+    /// opening at sign-in.
+    /// </summary>
+    public Func<IReadOnlyCollection<string>>? VersionsStillReferenced { get; init; }
 }
 
 /// <summary>
@@ -113,7 +121,13 @@ public sealed class UpgradeCoordinator(
             {
                 log.Add(Line($"Version {targetVersion} is healthy."));
 
-                var pruned = _layout.PruneOldVersions(targetVersion, _options.KeepVersions);
+                var referenced = _options.VersionsStillReferenced?.Invoke() ?? [];
+                var pruned = _layout.PruneOldVersions(targetVersion, _options.KeepVersions, referenced);
+
+                foreach (var version in referenced.Where(v => _layout.VersionExists(v)))
+                {
+                    log.Add(Line($"Keeping {version}: a start-up entry or shortcut still names it."));
+                }
                 if (pruned.Count > 0)
                 {
                     log.Add(Line($"Removed old versions: {string.Join(", ", pruned)}."));

@@ -488,6 +488,10 @@
                       <TextBlock TextWrapping="Wrap" FontSize="13"
                                  Text="Install them without asking. An update only adds a new version folder and switches which one runs — your pools and files are never touched, and a version that fails to come up is rolled back." />
                     </CheckBox>
+                    <CheckBox IsChecked="{Binding Updates.SeamlessRestart, Mode=TwoWay}" Margin="0,0,0,10">
+                      <TextBlock TextWrapping="Wrap" FontSize="13"
+                                 Text="Reopen this window on the new version by itself. An update installs, the service restarts onto it, and the window follows — nothing to click. Off means it waits and asks." />
+                    </CheckBox>
                     <CheckBox IsChecked="{Binding Updates.StartWithWindows, Mode=TwoWay}" Margin="0,0,0,14">
                       <TextBlock TextWrapping="Wrap" FontSize="13"
                                  Text="Open this window in the notification area when I sign in. The pools are mounted by the service either way, whether or not the window is open." />

@@ -201,6 +201,11 @@ The service restarts as part of this, so pools are unmounted and remounted. Anyt
 flushed by the drain first; a copy in progress through Explorer may report an interruption, the same
 as it would if the drive were briefly unplugged.
 
+Updates need nothing from you. MergePool checks every six hours, installs what it finds, and the
+service restarts onto the new version — your pools come straight back, and the files on your drives
+are never touched. The window then reopens itself on the new version: immediately if it is sitting in
+the notification area, or after a twenty-second grace period if it is open in front of you.
+
 In **Settings → Updates and start-up** you can:
 
 - turn off automatic checks,
