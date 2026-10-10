@@ -19,6 +19,13 @@ unchanged.
 
 ### Fixed
 
+- **Closing MergePool could show "MergePool's window hit an unexpected error: The operation was
+  canceled."** Shutting the window down cancels whatever it was asking the service, and the periodic
+  refresh is an `async void` handler, so a refresh in flight at that moment threw into the
+  dispatcher's unhandled handler and was reported as an error. It is not one: a cancelled refresh is
+  a refresh whose answer has nowhere to go. The refresh, every command, and the unhandled handler
+  itself now treat cancellation as what it is. 0.7.0's reopen-itself behaviour made this easy to hit,
+  because handing over to a new version cancels mid-refresh by design.
 - **A version the updater installed could only be read by the service that downloaded it, so the
   window would not start at all.** The download was unpacked in the service's own temp directory and
   then moved into `versions\{version}`, and moving a directory on NTFS keeps the permissions it had

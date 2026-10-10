@@ -359,6 +359,15 @@ public partial class App : Application
     /// </summary>
     private void OnUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
+        // Cancellation is how this window shuts down and how it hands over to a new version, so it
+        // reaches here by design during both. Telling someone their window "hit an unexpected
+        // error: the operation was canceled" while it closes is alarming and says nothing.
+        if (e.Exception is OperationCanceledException)
+        {
+            e.Handled = true;
+            return;
+        }
+
         MessageBox.Show(
             $"MergePool's window hit an unexpected error:\n\n{e.Exception.Message}\n\n"
             + "Your pools are unaffected — the MergePool service keeps them mounted.",

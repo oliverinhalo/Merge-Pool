@@ -46,6 +46,12 @@ public sealed class AsyncCommand(Func<Task> execute, Func<bool>? canExecute = nu
         {
             await execute().ConfigureAwait(true);
         }
+        catch (OperationCanceledException)
+        {
+            // MergePool is closing, or replacing this window with a newer version of itself. This
+            // is an async void handler, so anything thrown here would land in the dispatcher's
+            // unhandled handler and be shown as an error the user can do nothing about.
+        }
         finally
         {
             _running = false;
