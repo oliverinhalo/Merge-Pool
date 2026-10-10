@@ -12,6 +12,35 @@ change:
 - **Config schema** — `config.json` `schemaVersion`, migrated forward only, backed up first,
   unknown fields preserved.
 
+## [0.8.0] - 2026-10-10
+
+Data format: a reserved `.staging` folder is added at the install root — see below. Config schema:
+unchanged.
+
+### Fixed
+
+- **A version the updater installed could only be read by the service that downloaded it, so the
+  window would not start at all.** The download was unpacked in the service's own temp directory and
+  then moved into `versions\{version}`, and moving a directory on NTFS keeps the permissions it had
+  where it came from: the new parent's are never applied. For LocalSystem that means the version
+  arrived readable by LocalSystem and administrators and nobody else. The window runs as whoever is
+  signed in, so launching it through `current` failed with **"CreateProcess failed: code 5. Access is
+  denied"** — on a copy that had updated itself, with nothing in any log to say why, and the service
+  working perfectly throughout because it was the one account that could read the files. This is the
+  root cause of the code 5 reported against 0.4.0, which earlier releases addressed the wrong half of.
+- Downloads are now unpacked in `.staging` inside the install root, so what comes out already has the
+  permissions everything else there has and the move into place needs no repair. It also keeps the
+  move on one volume: a temp directory can be on another drive, and moving a directory across volumes
+  is not a rename and fails outright — a second way the old path could break an update.
+- The permissions of a version staged by an older updater are repaired after the move, for the
+  fallback path and for anything already on disk.
+- **Setup puts the whole install root back to inheriting its permissions**, which repairs every
+  version an older updater left unreadable. A machine that has been auto-updating since 0.3.0 is
+  fixed by installing this once.
+- `.staging` is removed on uninstall, and sits beside `versions` rather than inside it: a
+  half-unpacked directory there would be listed as an installed version and could be pruned
+  mid-download.
+
 ## [0.7.0] - 2026-10-10
 
 Data format: a reserved `.mergepool-work` folder is added at each pool part root, hidden from the

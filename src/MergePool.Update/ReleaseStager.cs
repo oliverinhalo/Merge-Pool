@@ -53,8 +53,7 @@ public sealed class ReleaseStager(InstallLayout layout, HttpClient http)
             return Describe(release.Version, versionPath);
         }
 
-        var work = Path.Combine(Path.GetTempPath(), "MergePool.Update", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(work);
+        var work = CreateWorkDirectory();
         var archive = Path.Combine(work, "package.zip");
 
         try
@@ -78,11 +77,46 @@ public sealed class ReleaseStager(InstallLayout layout, HttpClient http)
             }
 
             Directory.Move(root, versionPath);
+
+            // A move keeps the permissions the directory had where it was unpacked. Staging inside
+            // the install root means they are already right; this matters for the temp fallback,
+            // where they would be the service account's and nobody else's — and a version only
+            // LocalSystem can read is one the window cannot start from at all.
+            DirectoryPermissions.ResetToInherited(versionPath);
+
             return Describe(release.Version, versionPath);
         }
         finally
         {
             TryDeleteDirectory(work);
+        }
+    }
+
+    /// <summary>
+    /// Scratch space for the download, inside the install root so that what is unpacked already has
+    /// the permissions everything else there has — a version directory has to be readable by the
+    /// person signed in, not only by the service that downloaded it.
+    /// </summary>
+    /// <remarks>
+    /// It also keeps the move into place on one volume. A temp directory can be on another drive
+    /// entirely, and moving a directory across volumes is not a rename and fails outright.
+    /// </remarks>
+    private string CreateWorkDirectory()
+    {
+        var preferred = Path.Combine(_layout.StagingRoot, Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            Directory.CreateDirectory(preferred);
+            return preferred;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // A read-only or unusual install root. Temp still works; the permissions are repaired
+            // after the move instead of being inherited.
+            var fallback = Path.Combine(Path.GetTempPath(), "MergePool.Update", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(fallback);
+            return fallback;
         }
     }
 

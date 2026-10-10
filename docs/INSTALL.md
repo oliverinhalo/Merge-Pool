@@ -357,6 +357,18 @@ If the window is opened from a path naming a version directory, such as
 version on start-up rather than opening the old one. Shortcuts should point at
 `C:\Program Files\MergePool\current\MergePool.exe`, which always resolves to the installed version.
 
+**"CreateProcess failed: code 5. Access is denied" opening MergePool**
+
+On a copy that had updated itself, the version the updater installed could only be read by the
+service account that downloaded it, so your own account could not start the window from it. Fixed in
+0.8.0; installing 0.8.0 or newer once also repairs the versions already on disk.
+
+To repair it by hand instead, from an administrator PowerShell:
+
+```powershell
+icacls "C:\Program Files\MergePool" /reset /T /C /Q
+```
+
 **Setup ended with "CreateProcess failed: code 5"**
 
 That was setup's own "Open MergePool" tick box, not the install — everything was installed and the

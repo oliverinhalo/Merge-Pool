@@ -72,6 +72,48 @@ public sealed class ReleaseStagerTests : IDisposable
     }
 
     [Fact]
+    public async Task A_release_is_unpacked_inside_the_install_root_not_in_a_temp_directory()
+    {
+        // Where it is unpacked decides who can read it afterwards. Moving a directory keeps the
+        // permissions it had where it came from, so a version unpacked in the service's own temp
+        // directory arrives readable by LocalSystem and nobody else — and the window, which runs as
+        // whoever is signed in, then cannot start from it at all: CreateProcess, access denied.
+        var observed = new List<string>();
+        var payload = Package();
+
+        var stager = new ReleaseStager(_layout, new HttpClient(new StubHandler(_ =>
+        {
+            // Snapshot the install root the moment the download starts, which is after the work
+            // directory has been made and before anything has been moved into place.
+            if (Directory.Exists(_layout.InstallRoot))
+            {
+                observed.AddRange(Directory
+                    .EnumerateDirectories(_layout.InstallRoot)
+                    .Select(directory => Path.GetFileName(directory)!));
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(payload) };
+        })));
+
+        await stager.StageAsync(Release(), null, CancellationToken.None);
+
+        Assert.Contains(InstallLayout.StagingFolder, observed);
+    }
+
+    [Fact]
+    public async Task Staging_does_not_look_like_an_installed_version()
+    {
+        // A half-unpacked directory under versions\ would be listed as installed and could be
+        // pruned mid-download, so staging sits beside that folder rather than inside it.
+        await Stager(_layout, Package()).StageAsync(Release(), null, CancellationToken.None);
+
+        Assert.Equal(["0.3.0"], _layout.InstalledVersions());
+        Assert.DoesNotContain(InstallLayout.StagingFolder, _layout.InstalledVersions());
+        Assert.StartsWith(_layout.InstallRoot, _layout.StagingRoot, StringComparison.Ordinal);
+        Assert.DoesNotContain(InstallLayout.VersionsFolder, Path.GetRelativePath(_layout.InstallRoot, _layout.StagingRoot));
+    }
+
+    [Fact]
     public async Task An_archive_wrapped_in_a_single_folder_is_unwrapped()
     {
         var staged = await Stager(_layout, Package(wrapInFolder: true))
