@@ -59,6 +59,7 @@ public partial class App : Application
         _viewModel.Web.CopyToClipboard = CopyToClipboard;
         _viewModel.Web.OpenInBrowser = OpenInExplorer;
         _viewModel.Updates.RelaunchWindow = RelaunchWindow;
+        _viewModel.Duplication.ConfirmAction = Confirm;
 
         _window = new MainWindow { DataContext = _viewModel };
         _window.Closing += OnWindowClosing;

@@ -270,8 +270,7 @@ public sealed class UnionView(IPoolTopology topology)
     }
 
     /// <summary>Pool-part bookkeeping never appears inside the pool namespace.</summary>
-    private static bool IsPoolPartInternal(string name) =>
-        string.Equals(name, PoolPartLayout.MarkerFileName, PoolPath.Comparison);
+    private static bool IsPoolPartInternal(string name) => PoolPartLayout.IsInternalRootName(name);
 
     /// <summary>Enumeration can throw per item when a removable drive disappears mid-listing.</summary>
     private static IEnumerable<FileSystemInfo> EnumerateSafely(IEnumerable<FileSystemInfo> source)

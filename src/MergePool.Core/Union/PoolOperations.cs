@@ -188,41 +188,61 @@ public sealed class PoolOperations(IPoolTopology topology, IPlacementStrategy pl
             return;
         }
 
-        var file = View.FindFile(source)
-            ?? throw new FileNotFoundException($"'{source}' does not exist in the pool.");
+        var copies = View.FindAllFiles(source);
+        if (copies.Count == 0)
+        {
+            throw new FileNotFoundException($"'{source}' does not exist in the pool.");
+        }
 
-        RenameFile(file, destination, replaceExisting);
+        RenameFile(copies, destination, replaceExisting);
     }
 
-    private void RenameFile(PoolLocation file, string destination, bool replaceExisting)
+    /// <summary>
+    /// Renames every copy of a file, each on its own drive. A duplicated file has a copy per drive
+    /// and all of them have to follow: moving only the one the union reads would leave the others
+    /// under the old name, and the old name would simply reappear in the pool.
+    /// </summary>
+    private void RenameFile(IReadOnlyList<PoolLocation> copies, string destination, bool replaceExisting)
     {
         if (!replaceExisting && View.Exists(destination))
         {
             throw new IOException($"'{destination}' already exists.");
         }
 
-        var target = HostPathIn(file.Part, destination);
-        var parent = Path.GetDirectoryName(target);
-        if (!string.IsNullOrEmpty(parent))
-        {
-            GuardInsidePart(file.Part, parent);
-            Directory.CreateDirectory(parent);
-        }
-
-        GuardInsidePart(file.Part, file.HostPath);
-        GuardInsidePart(file.Part, target);
-
         if (replaceExisting)
         {
             // Clear the name everywhere first: the union must not be left with two winners.
+            var moving = copies.Select(c => c.HostPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
             foreach (var existing in View.FindAllFiles(destination))
             {
+                if (moving.Contains(existing.HostPath))
+                {
+                    // The same file on the same drive; File.Move below handles it.
+                    continue;
+                }
+
                 GuardInsidePart(existing.Part, existing.HostPath);
                 File.Delete(existing.HostPath);
             }
         }
 
-        File.Move(file.HostPath, target, overwrite: replaceExisting);
+        foreach (var copy in copies)
+        {
+            var target = HostPathIn(copy.Part, destination);
+
+            GuardInsidePart(copy.Part, copy.HostPath);
+            GuardInsidePart(copy.Part, target);
+
+            var parent = Path.GetDirectoryName(target);
+            if (!string.IsNullOrEmpty(parent))
+            {
+                GuardInsidePart(copy.Part, parent);
+                Directory.CreateDirectory(parent);
+            }
+
+            File.Move(copy.HostPath, target, overwrite: true);
+        }
     }
 
     private void RenameDirectory(IReadOnlyList<PoolLocation> sources, string destination, bool replaceExisting)

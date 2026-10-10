@@ -25,6 +25,7 @@ public sealed class PoolEngineWorker(
     private IpcServer? _server;
     private WebControlServer? _web;
     private WindowsFirewallRule? _firewall;
+    private DateTimeOffset _lastDuplicationSweep;
 
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -96,6 +97,7 @@ public sealed class PoolEngineWorker(
             {
                 engine.Tick(stoppingToken);
                 RunRebalancePass(stoppingToken);
+                await RunDuplicationPassAsync(stoppingToken).ConfigureAwait(false);
 
                 // Cheap when nothing changed: this only acts when the port, the scope or the on/off
                 // switch is not what the server is currently doing.
@@ -194,6 +196,83 @@ public sealed class PoolEngineWorker(
             RequestCount = status?.RequestCount ?? 0,
             RejectedCount = status?.RejectedCount ?? 0,
         };
+    }
+
+    /// <summary>
+    /// Keeping protected folders protected. Like rebalancing: one pool per tick, never while
+    /// draining, and swept on its own interval rather than every tick — walking the folders is the
+    /// expensive half, and a folder that was in order a minute ago usually still is.
+    /// </summary>
+    private async Task RunDuplicationPassAsync(CancellationToken stoppingToken)
+    {
+        if (engine.IsDraining || !engine.Config.Duplication.Enabled)
+        {
+            return;
+        }
+
+        var interval = engine.Config.Duplication.ScanInterval;
+        if (_lastDuplicationSweep != default && DateTimeOffset.UtcNow - _lastDuplicationSweep < interval)
+        {
+            return;
+        }
+
+        foreach (var pool in engine.Pools)
+        {
+            if (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            if (pool.DuplicationRules.Count == 0)
+            {
+                continue;
+            }
+
+            var plan = pool.PlanDuplication();
+
+            foreach (var rule in plan.Rules.Where(static r => r.NeedsMoreDrives))
+            {
+                logger.LogWarning(
+                    "Pool {Pool}: '{Folder}' asks for {Wanted} copies but only {Drives} drive(s) can hold them.",
+                    pool.Definition.Name,
+                    rule.Folder,
+                    rule.RequestedCopies,
+                    rule.DrivesAvailable);
+            }
+
+            if (plan.IsEmpty)
+            {
+                continue;
+            }
+
+            logger.LogInformation(
+                "Duplicating pool {Pool}: {Add} to add, {Refresh} to refresh, {Remove} to remove, {Bytes} bytes.",
+                pool.Definition.Name,
+                plan.CopiesToAdd,
+                plan.CopiesToRefresh,
+                plan.CopiesToRemove,
+                plan.BytesToCopy);
+
+            var result = await pool.Duplicator.RunAsync(plan, stoppingToken).ConfigureAwait(false);
+
+            logger.LogInformation(
+                "Duplication finished: added {Added}, refreshed {Refreshed}, removed {Removed}, skipped {Skipped}.",
+                result.CopiesAdded,
+                result.CopiesRefreshed,
+                result.CopiesRemoved,
+                result.Skipped);
+
+            foreach (var problem in result.Problems)
+            {
+                logger.LogWarning("Duplication: {Problem}", problem);
+            }
+
+            _lastDuplicationSweep = DateTimeOffset.UtcNow;
+            return;
+        }
+
+        // Nothing had anything to do, which still counts as having looked.
+        _lastDuplicationSweep = DateTimeOffset.UtcNow;
     }
 
     /// <summary>Rebalancing is opportunistic: one pool per tick, and never while draining.</summary>

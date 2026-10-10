@@ -76,7 +76,7 @@ See [docs/UPGRADES.md](docs/UPGRADES.md).
 
 | Path | What it is | Builds on |
 | --- | --- | --- |
-| `src/MergePool.Core` | Pool model, union view, placement, throttling, config | any OS |
+| `src/MergePool.Core` | Pool model, union view, placement, throttling, duplication, config | any OS |
 | `src/MergePool.Ipc` | Versioned named-pipe protocol, server and client | any OS |
 | `src/MergePool.Engine` | Pool engine: config, runtimes, mounting, drain/resume, health | any OS |
 | `src/MergePool.Update` | Side-by-side install layout, release feed, upgrade and rollback | any OS |

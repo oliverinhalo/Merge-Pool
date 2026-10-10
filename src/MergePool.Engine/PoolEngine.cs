@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 using MergePool.Core.Config;
+using MergePool.Core.Duplication;
 using MergePool.Core.FileSystem;
 using MergePool.Core.Model;
 using MergePool.Core.Placement;
@@ -580,6 +581,7 @@ public sealed class PoolEngine : IDisposable
         foreach (var runtime in runtimes)
         {
             runtime.Rebalancer.Pause();
+            runtime.Duplicator.Pause();
             _mounts.Unmount(runtime.PoolId);
         }
     }
@@ -597,6 +599,7 @@ public sealed class PoolEngine : IDisposable
         {
             runtime.Invalidate();
             runtime.Rebalancer.Resume();
+            runtime.Duplicator.Resume();
 
             if (string.IsNullOrWhiteSpace(runtime.Definition.MountPoint) || !runtime.Definition.Enabled)
             {
@@ -647,6 +650,104 @@ public sealed class PoolEngine : IDisposable
     {
         var runtime = FindPool(poolId) ?? throw new KeyNotFoundException($"No pool {poolId:D}.");
         return runtime.Rebalancer.RunOnce(cancellationToken);
+    }
+
+    // ---- Duplication: folders kept on more than one drive ----
+
+    /// <summary>
+    /// Adds a protected folder, or changes one that is already protected. Returns the rule as
+    /// stored, with the id the caller should use from then on.
+    /// </summary>
+    /// <remarks>
+    /// One rule per folder: setting the same folder twice changes the rule rather than stacking a
+    /// second one on it, because two rules on one folder would be two answers to "how many copies".
+    /// </remarks>
+    public DuplicationRule SetDuplicationRule(Guid poolId, DuplicationRule rule)
+    {
+        ArgumentNullException.ThrowIfNull(rule);
+
+        var folder = PoolPath.Normalize(rule.Folder);
+
+        lock (_gate)
+        {
+            var definition = RequireDefinition(poolId);
+
+            DuplicationRule? existing = rule.Id != Guid.Empty
+                ? definition.Duplication.FirstOrDefault(r => r.Id == rule.Id)
+                : definition.Duplication.FirstOrDefault(r => PoolPath.Comparer.Equals(PoolPath.Normalize(r.Folder), folder));
+
+            if (existing is null)
+            {
+                existing = new DuplicationRule { Id = rule.Id == Guid.Empty ? Guid.NewGuid() : rule.Id };
+                definition.Duplication.Add(existing);
+            }
+
+            existing.Folder = folder;
+            existing.Enabled = rule.Enabled;
+            existing.Mode = rule.Mode;
+            existing.Copies = Math.Max(DuplicationRule.MinimumCopies, rule.Copies);
+            existing.OnlyOnParts = rule.OnlyOnParts.Distinct().ToList();
+            existing.VerifyByContent = rule.VerifyByContent;
+            existing.Surplus = rule.Surplus;
+
+            _configStore.Save(_config);
+            return existing;
+        }
+    }
+
+    /// <summary>
+    /// Stops protecting a folder. The copies already on the drives are left exactly where they are:
+    /// removing a rule is a decision about the future, and deleting data is not what was asked for.
+    /// </summary>
+    public bool RemoveDuplicationRule(Guid poolId, Guid ruleId)
+    {
+        lock (_gate)
+        {
+            var definition = RequireDefinition(poolId);
+            var removed = definition.Duplication.RemoveAll(r => r.Id == ruleId) > 0;
+
+            if (removed)
+            {
+                _configStore.Save(_config);
+            }
+
+            return removed;
+        }
+    }
+
+    /// <summary>The stored definition of a pool. Held under the lock by every caller here.</summary>
+    private PoolDefinition RequireDefinition(Guid poolId) =>
+        _config.Pools.FirstOrDefault(p => p.Id == poolId)
+        ?? throw new KeyNotFoundException($"No pool {poolId:D}.");
+
+    /// <summary>What duplication would do for a pool right now, without doing any of it.</summary>
+    public DuplicationPlan PlanDuplication(Guid poolId)
+    {
+        var runtime = FindPool(poolId) ?? throw new KeyNotFoundException($"No pool {poolId:D}.");
+        return runtime.PlanDuplication();
+    }
+
+    /// <summary>Makes the copies a pool's rules ask for, now rather than on the next sweep.</summary>
+    public async Task<DuplicationRunResult> DuplicateOnceAsync(Guid poolId, CancellationToken cancellationToken = default)
+    {
+        var runtime = FindPool(poolId) ?? throw new KeyNotFoundException($"No pool {poolId:D}.");
+        var plan = runtime.PlanDuplication();
+
+        return plan.IsEmpty
+            ? DuplicationRunResult.Nothing
+            : await runtime.Duplicator.RunAsync(plan, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Applies duplication settings that are not per-folder, and persists them.</summary>
+    public void UpdateDuplicationSettings(Action<DuplicationSettings> update)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+
+        lock (_gate)
+        {
+            update(_config.Duplication);
+            _configStore.Save(_config);
+        }
     }
 
     /// <summary>Applies runtime tuning and persists it. Unknown fields in the config are preserved.</summary>
@@ -736,7 +837,7 @@ public sealed class PoolEngine : IDisposable
     }
 
     private PoolRuntime CreateRuntime(PoolDefinition definition) =>
-        new(definition, _partManager, _config.Placement, Metrics, _relocator, _timeProvider);
+        new(definition, _partManager, _config.Placement, Metrics, _relocator, _timeProvider, _config.Duplication);
 
     public void Dispose()
     {

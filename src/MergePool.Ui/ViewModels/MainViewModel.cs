@@ -37,6 +37,7 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
         Updates = new UpdateViewModel(_service, () => _shutdown.Token);
         Settings = new SettingsViewModel(_service, () => _shutdown.Token);
         Web = new WebInterfaceViewModel(_service, () => _shutdown.Token);
+        Duplication = new DuplicationViewModel(_service, () => _shutdown.Token);
 
         CreatePoolCommand = new AsyncCommand(CreatePoolAsync, () => CanCreatePool);
         RefreshCommand = new AsyncCommand(() => RefreshAsync(_shutdown.Token));
@@ -65,6 +66,8 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
     public SettingsViewModel Settings { get; }
 
     public WebInterfaceViewModel Web { get; }
+
+    public DuplicationViewModel Duplication { get; }
 
     public AsyncCommand CreatePoolCommand { get; }
 
@@ -182,6 +185,7 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
             if (Set(ref _selectedPool, value))
             {
                 SelectedPart = value?.Parts.FirstOrDefault();
+                Duplication.SetPool(value?.PoolId ?? Guid.Empty);
                 RaiseCommandStates();
             }
         }
@@ -267,6 +271,7 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
         await RefreshPoolsAsync(cancellationToken).ConfigureAwait(true);
         await RefreshUpdatesAsync(cancellationToken).ConfigureAwait(true);
         await RefreshWebAsync(cancellationToken).ConfigureAwait(true);
+        await RefreshDuplicationAsync(cancellationToken).ConfigureAwait(true);
         AnnounceStatus();
     }
 
@@ -281,6 +286,24 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
             Methods.UpdateStatus, null, cancellationToken).ConfigureAwait(true);
 
         Updates.Apply(status);
+    }
+
+    private async Task RefreshDuplicationAsync(CancellationToken cancellationToken)
+    {
+        if (!_service.Supports(Capabilities.Duplication) || SelectedPool is not { } pool)
+        {
+            return;
+        }
+
+        var state = await _service.TryInvokeAsync<DuplicationResult>(
+            Methods.DuplicationGet,
+            new DuplicationRuleRequest { PoolId = pool.PoolId },
+            cancellationToken).ConfigureAwait(true);
+
+        if (state is not null)
+        {
+            Duplication.Apply(state);
+        }
     }
 
     private async Task RefreshWebAsync(CancellationToken cancellationToken)

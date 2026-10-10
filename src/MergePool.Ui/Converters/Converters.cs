@@ -57,6 +57,14 @@ public sealed class BoolToVisibilityConverter : IValueConverter
         throw new NotSupportedException();
 }
 
+/// <summary>The opposite of a boolean, for a control that is only useful while something is off.</summary>
+public sealed class NotBoolConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture) => value is not true;
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => value is not true;
+}
+
 /// <summary>Colours a drive's status: missing is a problem, throttled is only a warning.</summary>
 public sealed class StatusBrushConverter : IValueConverter
 {
