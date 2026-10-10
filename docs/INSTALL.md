@@ -141,7 +141,50 @@ pool.
 The last drive in a pool cannot be removed this way. Remove the pool instead, which also leaves
 every file on its drive.
 
-### 4. Staying up to date
+### 4. Keeping a folder on more than one drive
+
+A pool spreads files across its drives, so by default each file is on exactly one of them: lose that
+drive and you have lost those files. For the things you cannot replace — photographs, documents,
+anything irreplaceable — tell MergePool to keep a folder on several drives at once.
+
+In the **Protected** tab:
+
+1. Type the folder as it appears inside the pool: `Photos`, or `Photos\2026`. The folder and
+   everything under it is covered.
+2. Choose how many copies. **Two** survives losing one drive; **three** survives losing two at
+   once. Or tick **A copy on every drive in the pool**, which uses the most space and survives the
+   most.
+3. Click **Protect this folder** — or **Protect the whole pool**, which covers every file in it,
+   including ones added later.
+
+Copies are made in the background, rate-capped, and give way to whatever else is using the drives.
+The tab says how far along it is: "2,140 of 4,182 file(s) protected, 18.2 GB still to copy", and
+"all 4,182 file(s) have 2 copies" when it is done. **Check now** goes over the folders immediately
+rather than waiting for the next sweep.
+
+**What the copies are.** Ordinary files, in the same mirrored path on each drive, exactly like
+everything else in a pool. Open `D:\.PoolPart-{GUID}\Photos\` and `E:\.PoolPart-{GUID}\Photos\`
+and you will find the same files in both. Nothing needs MergePool to read them.
+
+**Other options, per folder:**
+
+- **Only on certain drives** — keeps copies off a disk you do not trust.
+- **Check copies byte for byte** — catches a copy that has rotted on the disk, rather than trusting
+  size and date. It reads every byte of every copy on each sweep, so it is off by default.
+- **Keep copies this rule no longer asks for** — off means lowering the number of copies deletes the
+  extra ones; on means nothing is ever deleted to satisfy a rule.
+
+**Stop protecting** a folder and the copies already on your drives stay exactly where they are.
+Nothing is deleted; new and changed files in it simply stop being copied.
+
+Two things MergePool will not do, whatever you ask of it: put two copies of a file on one drive —
+that is one disk failure away from no copies — and delete the last copy of anything.
+
+**This is not a backup.** The copies are on the pool's own drives. It survives a drive dying. It does
+not survive a fire, a theft, ransomware, or deleting the file yourself. Keep a real backup as well,
+off this machine.
+
+### 5. Staying up to date
 
 **After this first install, MergePool updates itself.** The service checks for new releases a few
 times a day, downloads the new version, and installs it. You do not have to do anything, and you
@@ -158,6 +201,11 @@ The service restarts as part of this, so pools are unmounted and remounted. Anyt
 flushed by the drain first; a copy in progress through Explorer may report an interruption, the same
 as it would if the drive were briefly unplugged.
 
+Updates need nothing from you. MergePool checks every six hours, installs what it finds, and the
+service restarts onto the new version — your pools come straight back, and the files on your drives
+are never touched. The window then reopens itself on the new version: immediately if it is sitting in
+the notification area, or after a twenty-second grace period if it is open in front of you.
+
 In **Settings → Updates and start-up** you can:
 
 - turn off automatic checks,
@@ -168,7 +216,7 @@ In **Settings → Updates and start-up** you can:
 If you would rather do it by hand, the releases page has a setup executable as well; running it
 upgrades an existing install in place.
 
-### 5. Controlling MergePool from a browser
+### 6. Controlling MergePool from a browser
 
 MergePool can serve a small web page on a port you choose, so you can check the pools or mount a
 drive from a phone, a laptop, or another PC. It is **off until you turn it on**.
@@ -202,7 +250,7 @@ port to the internet.
 network, on the private and domain profiles only, and closes it again when you turn the interface
 off or stop the service. If you would rather manage that yourself, untick the option.
 
-### 6. Where MergePool puts things
+### 7. Where MergePool puts things
 
 | Path | What it is |
 | --- | --- |
@@ -216,7 +264,7 @@ movies, with normal names, permissions and timestamps. No database, no container
 format. If MergePool is uninstalled, or the machine dies and you put the drive in another PC, the
 files are still there and still readable.
 
-### 7. Updating by hand
+### 8. Updating by hand
 
 Run the newer installer. It stops the service, installs the new version **alongside** the old one,
 and points `current` at it. Your configuration and your pooled files are untouched.
@@ -233,7 +281,7 @@ new version. **If the new version does not come up healthy, it puts the old one 
 that your pools are serving again.** Exit codes: `0` success, `1` rolled back, `3` the rollback
 also failed and the machine needs attention.
 
-### 8. Uninstalling
+### 9. Uninstalling
 
 Uninstall MergePool from **Settings → Apps** as usual. It stops and removes the service and deletes
 the program folder.
@@ -244,7 +292,7 @@ then delete the empty folder.
 
 WinFsp is left installed; remove it separately if you want it gone.
 
-### 9. If something goes wrong
+### 10. If something goes wrong
 
 **The pool drive letter does not appear**
 

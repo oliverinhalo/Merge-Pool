@@ -19,6 +19,7 @@
       <converters:StatePillBrushConverter x:Key="StatePillBrush" />
       <converters:StateDotBrushConverter x:Key="StateDotBrush" />
       <converters:StateTextBrushConverter x:Key="StateTextBrush" />
+      <converters:NotBoolConverter x:Key="NotBool" />
     </ResourceDictionary>
   </Application.Resources>
 </Application>

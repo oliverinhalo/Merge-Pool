@@ -488,6 +488,10 @@
                       <TextBlock TextWrapping="Wrap" FontSize="13"
                                  Text="Install them without asking. An update only adds a new version folder and switches which one runs — your pools and files are never touched, and a version that fails to come up is rolled back." />
                     </CheckBox>
+                    <CheckBox IsChecked="{Binding Updates.SeamlessRestart, Mode=TwoWay}" Margin="0,0,0,10">
+                      <TextBlock TextWrapping="Wrap" FontSize="13"
+                                 Text="Reopen this window on the new version by itself. An update installs, the service restarts onto it, and the window follows — nothing to click. Off means it waits and asks." />
+                    </CheckBox>
                     <CheckBox IsChecked="{Binding Updates.StartWithWindows, Mode=TwoWay}" Margin="0,0,0,14">
                       <TextBlock TextWrapping="Wrap" FontSize="13"
                                  Text="Open this window in the notification area when I sign in. The pools are mounted by the service either way, whether or not the window is open." />
@@ -507,6 +511,136 @@
                       <Run Text="Versions installed:" />
                       <Run Text="{Binding Updates.InstalledVersionsText, Mode=OneWay}" />
                     </TextBlock>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </ScrollViewer>
+          </TabItem>
+
+          <!-- Folders kept on more than one drive -->
+          <TabItem Header="Protected">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
+              <StackPanel>
+                <TextBlock Text="Folders kept on more than one drive" Style="{StaticResource Heading}" />
+                <TextBlock Style="{StaticResource Body}" Margin="0,0,0,8"
+                           Text="Pick a folder inside the pool and MergePool keeps every file in it on several drives at once. Lose a drive and the files are still there, on the others. The copies are ordinary files in the usual place on each drive, so they are readable with MergePool uninstalled." />
+                <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,14"
+                           Text="This is not a backup of your computer: copies live on the pool's own drives, so it survives a drive dying, not a fire, a theft or deleting the file yourself." />
+
+                <TextBlock Text="{Binding Duplication.Headline}" Style="{StaticResource Body}"
+                           FontWeight="SemiBold" Margin="0,0,0,10" TextWrapping="Wrap" />
+
+                <!-- What is protected now -->
+                <Border Style="{StaticResource InsetCard}" Margin="0,0,0,16">
+                  <StackPanel>
+                    <TextBlock Text="PROTECTED FOLDERS" Style="{StaticResource Subheading}" />
+
+                    <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,8"
+                               Visibility="{Binding Duplication.Folders.Count, Converter={StaticResource ZeroToVisibility}}"
+                               Text="Nothing yet. Add a folder below, or protect the whole pool." />
+
+                    <ListBox ItemsSource="{Binding Duplication.Folders}"
+                             SelectedItem="{Binding Duplication.Selected, Mode=TwoWay}"
+                             BorderThickness="0" Background="Transparent" MaxHeight="280"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                      <ListBox.ItemTemplate>
+                        <DataTemplate>
+                          <StackPanel Margin="0,4,0,8">
+                            <StackPanel Orientation="Horizontal">
+                              <Ellipse Width="8" Height="8" VerticalAlignment="Center" Margin="0,0,8,0"
+                                       Fill="{Binding IsSatisfied, Converter={StaticResource StateDotBrush}}" />
+                              <TextBlock Text="{Binding Folder}" FontWeight="SemiBold"
+                                         Foreground="{DynamicResource TextBrush}" />
+                              <TextBlock Text="{Binding Copies}" Style="{StaticResource Caption}" Margin="10,0,0,0"
+                                         VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding State}" Style="{StaticResource Caption}"
+                                       TextWrapping="Wrap" Margin="16,2,0,0" />
+                            <TextBlock Text="{Binding Extras}" Style="{StaticResource Caption}"
+                                       TextWrapping="Wrap" Margin="16,2,0,0" />
+                            <TextBlock Text="{Binding Problems}" Style="{StaticResource Caption}"
+                                       TextWrapping="Wrap" Margin="16,2,0,0"
+                                       Foreground="{DynamicResource WarningBrush}"
+                                       Visibility="{Binding HasProblems, Converter={StaticResource BoolToVisibility}}" />
+                          </StackPanel>
+                        </DataTemplate>
+                      </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                      <Button Content="Check now" MinWidth="104" Margin="0,0,6,0"
+                              Command="{Binding Duplication.RunNowCommand}"
+                              ToolTip="Go over the protected folders now rather than waiting for the next sweep." />
+                      <Button Content="{Binding Duplication.PauseLabel}" MinWidth="96" Margin="0,0,6,0"
+                              Command="{Binding Duplication.TogglePauseCommand}" />
+                      <Button Content="Stop protecting" MinWidth="128"
+                              Style="{StaticResource DangerButton}"
+                              Command="{Binding Duplication.RemoveCommand}"
+                              ToolTip="Stops making copies of this folder. Nothing already on your drives is deleted." />
+                    </StackPanel>
+                  </StackPanel>
+                </Border>
+
+                <!-- Adding one -->
+                <TextBlock Text="PROTECT A FOLDER" Style="{StaticResource Subheading}" />
+                <Border Style="{StaticResource InsetCard}" Margin="0,0,0,16">
+                  <StackPanel>
+                    <TextBlock Text="FOLDER INSIDE THE POOL" Style="{StaticResource Subheading}" />
+                    <TextBox Text="{Binding Duplication.NewFolder, UpdateSourceTrigger=PropertyChanged}"
+                             Margin="0,0,0,4" />
+                    <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,12"
+                               Text="For example Photos, or Photos\2026. The folder and everything under it." />
+
+                    <CheckBox IsChecked="{Binding Duplication.NewEveryDrive, Mode=TwoWay}" Margin="0,0,0,10"
+                              Content="A copy on every drive in the pool" />
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4"
+                                IsEnabled="{Binding Duplication.NewEveryDrive, Converter={StaticResource NotBool}}">
+                      <TextBlock Text="Copies" VerticalAlignment="Center" Margin="0,0,10,0"
+                                 Foreground="{DynamicResource TextBrush}" FontSize="13" />
+                      <Slider Width="220" Minimum="2" Maximum="8" TickFrequency="1" IsSnapToTickEnabled="True"
+                              VerticalAlignment="Center"
+                              Value="{Binding Duplication.NewCopies, Mode=TwoWay}" />
+                      <TextBlock Text="{Binding Duplication.NewCopies}" Style="{StaticResource Numeric}"
+                                 VerticalAlignment="Center" Margin="10,0,0,0"
+                                 Foreground="{DynamicResource TextBrush}" />
+                    </StackPanel>
+
+                    <TextBlock Text="{Binding Duplication.CopiesText}" Style="{StaticResource Caption}"
+                               TextWrapping="Wrap" Margin="0,0,0,12" />
+
+                    <CheckBox IsChecked="{Binding Duplication.NewVerifyByContent, Mode=TwoWay}" Margin="0,0,0,10">
+                      <TextBlock TextWrapping="Wrap" FontSize="13"
+                                 Text="Check copies byte for byte, not just by size and date. Catches a copy that has rotted on the disk; reads every byte of every copy on each sweep." />
+                    </CheckBox>
+
+                    <CheckBox IsChecked="{Binding Duplication.NewKeepSurplus, Mode=TwoWay}" Margin="0,0,0,14">
+                      <TextBlock TextWrapping="Wrap" FontSize="13"
+                                 Text="Keep copies this rule no longer asks for. Off means lowering the number of copies deletes the extra ones; on means nothing is ever deleted to satisfy a rule." />
+                    </CheckBox>
+
+                    <StackPanel Orientation="Horizontal">
+                      <Button Content="Protect this folder" Style="{StaticResource PrimaryButton}" MinWidth="152"
+                              Margin="0,0,6,0" Command="{Binding Duplication.AddCommand}" />
+                      <Button Content="Protect the whole pool" MinWidth="168"
+                              Command="{Binding Duplication.ProtectEverythingCommand}"
+                              ToolTip="Every file in the pool, including ones added later." />
+                    </StackPanel>
+
+                    <TextBlock Style="{StaticResource Caption}" Margin="0,10,0,0"
+                               Text="{Binding Duplication.Message}" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+
+                <TextBlock Text="COPYING" Style="{StaticResource Subheading}" />
+                <Border Style="{StaticResource InsetCard}">
+                  <StackPanel>
+                    <CheckBox IsChecked="{Binding Duplication.Enabled, Mode=TwoWay}">
+                      <TextBlock TextWrapping="Wrap" FontSize="13"
+                                 Text="Keep protected folders up to date in the background. Off pauses all copying everywhere; the copies already made are left alone." />
+                    </CheckBox>
+                    <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,0"
+                               Text="Copying is rate-capped and gives way to whatever else is using the drives, the same as evening out drive usage does. A file something has open is left for the next sweep." />
                   </StackPanel>
                 </Border>
               </StackPanel>

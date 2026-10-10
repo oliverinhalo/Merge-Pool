@@ -17,7 +17,7 @@ namespace MergePool.Ipc.Protocol;
 /// </remarks>
 public static class ProtocolVersion
 {
-    public const int Current = 4;
+    public const int Current = 5;
 
     public const int MinimumSupported = 1;
 
@@ -49,6 +49,8 @@ public static class Capabilities
     public const string AutoUpdate = "autoUpdate";
     /// <summary>The web interface: a port to serve it on, and who may reach it (protocol 4).</summary>
     public const string WebInterface = "webInterface";
+    /// <summary>Folders kept on more than one drive, so losing a drive does not lose them (protocol 5).</summary>
+    public const string Duplication = "duplication";
     public const string Config = "config";
     public const string Upgrade = "upgrade";
 
@@ -63,6 +65,7 @@ public static class Capabilities
         DriveRemoval,
         AutoUpdate,
         WebInterface,
+        Duplication,
         Config,
         Upgrade,
     ];
@@ -102,6 +105,11 @@ public static class Methods
     public const string WebGet = "web.get";
     public const string WebSet = "web.set";
     public const string WebRegenerateToken = "web.regenerateToken";
+    public const string DuplicationGet = "duplication.get";
+    public const string DuplicationSetRule = "duplication.setRule";
+    public const string DuplicationRemoveRule = "duplication.removeRule";
+    public const string DuplicationSetOptions = "duplication.setOptions";
+    public const string DuplicationRunNow = "duplication.runNow";
     public const string HealthCheck = "health.check";
 }
 

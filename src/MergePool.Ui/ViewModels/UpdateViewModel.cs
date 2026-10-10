@@ -19,6 +19,7 @@ public sealed class UpdateViewModel : ViewModelBase
     private UpdateStatusResult? _status;
     private string? _message;
     private bool _busy;
+    private bool _announcedStale;
 
     public UpdateViewModel(ServiceConnection service, Func<CancellationToken> token)
     {
@@ -72,6 +73,30 @@ public sealed class UpdateViewModel : ViewModelBase
     {
         get => _status?.AutomaticInstall ?? true;
         set => _ = ApplySettingAsync(new UpdateSettingsDto { AutomaticInstall = value });
+    }
+
+    /// <summary>
+    /// Whether the window reopens itself once the service has moved to a new version, rather than
+    /// waiting to be asked. On means an update needs nothing from you at all.
+    /// </summary>
+    public bool SeamlessRestart
+    {
+        get => StartupRegistration.SeamlessRestartEnabled();
+        set
+        {
+            if (StartupRegistration.SetSeamlessRestart(value))
+            {
+                Message = value
+                    ? "MergePool will reopen itself on the new version after an update."
+                    : "MergePool will ask before reopening itself after an update.";
+            }
+            else
+            {
+                Message = "Windows would not let MergePool save that setting.";
+            }
+
+            Raise();
+        }
     }
 
     /// <summary>Whether the window itself opens at sign-in. The service always does.</summary>
@@ -192,10 +217,23 @@ public sealed class UpdateViewModel : ViewModelBase
         {
             NewVersionFound?.Invoke(this, AvailableVersion ?? string.Empty);
         }
+
+        // Announced once. The banner stays either way; this is for reopening without being asked.
+        if (!_announcedStale && RestartTarget is { } target)
+        {
+            _announcedStale = true;
+            WindowLeftBehind?.Invoke(this, target);
+        }
     }
 
     /// <summary>Raised the first time a version is seen, so the tray can say so once.</summary>
     public event EventHandler<string>? NewVersionFound;
+
+    /// <summary>
+    /// Raised once when the service has moved to a newer version than this window. Carries the
+    /// executable to reopen, so the application does not have to work it out again.
+    /// </summary>
+    public event EventHandler<string>? WindowLeftBehind;
 
     private string Banner()
     {

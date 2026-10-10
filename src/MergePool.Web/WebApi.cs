@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
+using MergePool.Core.Config;
+using MergePool.Core.Duplication;
 using MergePool.Core.Volumes;
 using MergePool.Engine;
 
@@ -136,6 +138,7 @@ public sealed class WebApi(PoolEngine engine, AutoUpdateService? updates = null)
                 }),
 
                 "drives" => DriveAction(poolId, request),
+                "protected" => ProtectedFolders(poolId, request),
                 _ => WebResponse.Error(HttpStatusCode.NotFound, "No such endpoint."),
             };
         }
@@ -146,7 +149,150 @@ public sealed class WebApi(PoolEngine engine, AutoUpdateService? updates = null)
             return RemoveDrive(poolId, segments[4], request);
         }
 
+        // /api/pools/{id}/protected/{ruleId}, and /api/pools/{id}/protected/run
+        if (segments.Length == 5 && segments[3] == "protected")
+        {
+            return string.Equals(segments[4], "run", StringComparison.OrdinalIgnoreCase)
+                ? RunDuplication(poolId, request)
+                : StopProtecting(poolId, segments[4], request);
+        }
+
         return WebResponse.Error(HttpStatusCode.NotFound, "No such endpoint.");
+    }
+
+    // ---- Folders kept on more than one drive ----
+
+    private WebResponse ProtectedFolders(Guid poolId, WebRequest request)
+    {
+        if (string.Equals(request.Method, "GET", StringComparison.OrdinalIgnoreCase))
+        {
+            return WebResponse.Ok(Duplication(poolId));
+        }
+
+        if (!string.Equals(request.Method, "POST", StringComparison.OrdinalIgnoreCase))
+        {
+            return WebResponse.Error(HttpStatusCode.MethodNotAllowed, "Use GET to read or POST to protect a folder.");
+        }
+
+        var body = Parse(request.Body);
+
+        var folder = body.TryGetProperty("folder", out var folderValue) && folderValue.ValueKind == JsonValueKind.String
+            ? folderValue.GetString() ?? string.Empty
+            : string.Empty;
+
+        var everyDrive = body.TryGetProperty("everyDrive", out var every) && every.ValueKind == JsonValueKind.True;
+
+        var copies = body.TryGetProperty("copies", out var copiesValue) && copiesValue.TryGetInt32(out var parsed)
+            ? parsed
+            : DuplicationRule.DefaultCopies;
+
+        if (!everyDrive && copies < DuplicationRule.MinimumCopies)
+        {
+            return WebResponse.Error(
+                HttpStatusCode.BadRequest,
+                $"A protected folder keeps at least {DuplicationRule.MinimumCopies} copies; one copy is not a copy.");
+        }
+
+        var rule = new DuplicationRule
+        {
+            Folder = folder,
+            Mode = everyDrive ? DuplicationMode.AllDrives : DuplicationMode.Copies,
+            Copies = copies,
+            VerifyByContent = body.TryGetProperty("verifyByContent", out var verify) && verify.ValueKind == JsonValueKind.True,
+            Surplus = body.TryGetProperty("keepSurplus", out var keep) && keep.ValueKind == JsonValueKind.True
+                ? SurplusCopies.Keep
+                : SurplusCopies.Remove,
+        };
+
+        if (body.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String
+            && Guid.TryParse(id.GetString(), out var ruleId))
+        {
+            rule.Id = ruleId;
+        }
+
+        _engine.SetDuplicationRule(poolId, rule);
+        return WebResponse.Ok(Duplication(poolId));
+    }
+
+    private WebResponse StopProtecting(Guid poolId, string rawRuleId, WebRequest request)
+    {
+        if (!string.Equals(request.Method, "DELETE", StringComparison.OrdinalIgnoreCase))
+        {
+            return WebResponse.Error(HttpStatusCode.MethodNotAllowed, "Use DELETE to stop protecting a folder.");
+        }
+
+        if (!Guid.TryParse(rawRuleId, out var ruleId))
+        {
+            return WebResponse.Error(HttpStatusCode.BadRequest, $"'{rawRuleId}' is not a protected folder.");
+        }
+
+        if (!_engine.RemoveDuplicationRule(poolId, ruleId))
+        {
+            return WebResponse.Error(HttpStatusCode.NotFound, "No such protected folder in that pool.");
+        }
+
+        return WebResponse.Ok(Duplication(poolId));
+    }
+
+    private WebResponse RunDuplication(Guid poolId, WebRequest request) => Post(request, () =>
+    {
+        var result = _engine.DuplicateOnceAsync(poolId).GetAwaiter().GetResult();
+
+        return new
+        {
+            copiesAdded = result.CopiesAdded,
+            copiesRefreshed = result.CopiesRefreshed,
+            copiesRemoved = result.CopiesRemoved,
+            bytesWritten = result.BytesWritten,
+            skipped = result.Skipped,
+            problems = result.Problems,
+            protectedFolders = Duplication(poolId),
+        };
+    });
+
+    private object Duplication(Guid poolId)
+    {
+        var runtime = _engine.FindPool(poolId) ?? throw new KeyNotFoundException($"No pool {poolId:D}.");
+        var plan = runtime.PlanDuplication();
+        var statuses = plan.Rules.ToDictionary(rule => rule.RuleId);
+
+        return new
+        {
+            enabled = _engine.Config.Duplication.Enabled,
+            copiesToAdd = plan.CopiesToAdd,
+            copiesToRefresh = plan.CopiesToRefresh,
+            copiesToRemove = plan.CopiesToRemove,
+            bytesToCopy = plan.BytesToCopy,
+            folders = runtime.DuplicationRules.Select(rule =>
+            {
+                statuses.TryGetValue(rule.Id, out var status);
+
+                return (object)new
+                {
+                    id = rule.Id,
+                    folder = rule.Folder,
+                    enabled = rule.Enabled,
+                    everyDrive = rule.Mode is DuplicationMode.AllDrives,
+                    copies = rule.Copies,
+                    verifyByContent = rule.VerifyByContent,
+                    keepSurplus = rule.Surplus is SurplusCopies.Keep,
+                    requestedCopies = status?.RequestedCopies ?? 0,
+                    possibleCopies = status?.WantedCopies ?? 0,
+                    files = status?.Files ?? 0,
+                    protectedFiles = status?.ProtectedFiles ?? 0,
+                    bytes = status?.Bytes ?? 0,
+                    pendingBytes = status?.PendingBytes ?? 0,
+                    satisfied = status?.IsSatisfied ?? false,
+                    needsMoreDrives = status?.NeedsMoreDrives ?? false,
+                    problems = status is null
+                        ? Array.Empty<string>()
+                        : status.Shortfalls
+                            .Take(20)
+                            .Select(s => $"{s.PoolPath}: {s.Copies} of {s.WantedCopies} copies — {s.Reason}")
+                            .ToArray(),
+                };
+            }).ToArray(),
+        };
     }
 
     private WebResponse DriveAction(Guid poolId, WebRequest request)

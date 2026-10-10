@@ -181,6 +181,25 @@ public sealed class UpgradeCoordinatorTests
     }
 
     [Fact]
+    public async Task A_version_a_start_up_entry_still_names_is_not_deleted()
+    {
+        using var install = new FakeInstall("1.0.0", "1.1.0", "1.2.0");
+        install.Link.PointAt("1.1.0");
+
+        // Versions before 0.5.0 wrote their own path into the user's Run key, so an entry can name a
+        // version directory. Deleting it would leave that person with nothing opening at sign-in.
+        var options = new UpgradeOptions { VersionsStillReferenced = () => ["1.0.0"] };
+
+        var result = await install.Coordinator(options).UpgradeAsync("1.2.0", CancellationToken.None);
+
+        Assert.Equal(UpgradeOutcome.Succeeded, result.Outcome);
+        Assert.True(install.Layout.VersionExists("1.2.0"));
+        Assert.True(install.Layout.VersionExists("1.0.0"));
+        Assert.False(install.Layout.VersionExists("1.1.0"));
+        Assert.Contains(result.Log, line => line.Contains("still names it", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Keeping_only_one_version_still_leaves_a_rollback_possible()
     {
         // Pruning is the last step of a successful upgrade, so the version being replaced is still

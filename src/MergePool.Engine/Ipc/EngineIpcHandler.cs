@@ -59,6 +59,11 @@ public sealed class EngineIpcHandler(
         IpcMethods.WebGet,
         IpcMethods.WebSet,
         IpcMethods.WebRegenerateToken,
+        IpcMethods.DuplicationGet,
+        IpcMethods.DuplicationSetRule,
+        IpcMethods.DuplicationRemoveRule,
+        IpcMethods.DuplicationSetOptions,
+        IpcMethods.DuplicationRunNow,
         IpcMethods.HealthCheck,
     ];
 
@@ -113,6 +118,11 @@ public sealed class EngineIpcHandler(
                 IpcMethods.WebGet => Ok(id, WebInterface()),
                 IpcMethods.WebSet => SetWebOptions(call),
                 IpcMethods.WebRegenerateToken => RegenerateWebToken(call),
+                IpcMethods.DuplicationGet => Ok(id, Duplication(PoolIdOf(call))),
+                IpcMethods.DuplicationSetRule => SetDuplicationRule(call),
+                IpcMethods.DuplicationRemoveRule => RemoveDuplicationRule(call),
+                IpcMethods.DuplicationSetOptions => SetDuplicationOptions(call),
+                IpcMethods.DuplicationRunNow => await RunDuplicationAsync(call, cancellationToken).ConfigureAwait(false),
                 IpcMethods.HealthCheck => Ok(id, HealthCheck()),
                 _ => IpcResponse.Failure(id, IpcErrorCodes.MethodNotSupported, $"'{call.Request.Method}' is unknown."),
             };
@@ -495,6 +505,170 @@ public sealed class EngineIpcHandler(
 
         return Ok(call.Request.Id, WebInterface());
     }
+
+    // ---- Duplication (protocol 5) ----
+
+    private static Guid PoolIdOf(IpcCall call) => call.PayloadAs<DuplicationRuleRequest>().PoolId;
+
+    private DuplicationResult Duplication(Guid poolId)
+    {
+        var runtime = _engine.FindPool(poolId) ?? throw new KeyNotFoundException($"No pool {poolId:D}.");
+        var settings = _engine.Config.Duplication;
+        var plan = runtime.PlanDuplication();
+        var statuses = plan.Rules.ToDictionary(r => r.RuleId);
+
+        var rules = runtime.DuplicationRules.Select(rule =>
+        {
+            var dto = Describe(rule);
+
+            if (statuses.TryGetValue(rule.Id, out var status))
+            {
+                dto.RequestedCopies = status.RequestedCopies;
+                dto.PossibleCopies = status.WantedCopies;
+                dto.Files = status.Files;
+                dto.ProtectedFiles = status.ProtectedFiles;
+                dto.Bytes = status.Bytes;
+                dto.PendingBytes = status.PendingBytes;
+                dto.DrivesAvailable = status.DrivesAvailable;
+                dto.Satisfied = status.IsSatisfied;
+
+                // The first few, not all of them: a rule that cannot be met for a hundred thousand
+                // files would otherwise send a hundred thousand lines to say one thing.
+                dto.Problems = status.Shortfalls
+                    .Take(ProblemsReported)
+                    .Select(s => $"{s.PoolPath}: {s.Copies} of {s.WantedCopies} copies — {s.Reason}")
+                    .ToList();
+            }
+
+            return dto;
+        }).ToList();
+
+        return new DuplicationResult
+        {
+            PoolId = poolId,
+            Enabled = settings.Enabled,
+            MaxBytesPerSecond = settings.MaxBytesPerSecond,
+            ScanIntervalMinutes = settings.ScanIntervalMinutes,
+            Rules = rules,
+            CopiesToAdd = plan.CopiesToAdd,
+            CopiesToRefresh = plan.CopiesToRefresh,
+            CopiesToRemove = plan.CopiesToRemove,
+            BytesToCopy = plan.BytesToCopy,
+        };
+    }
+
+    private static DuplicationRuleDto Describe(DuplicationRule rule) => new()
+    {
+        Id = rule.Id,
+        Folder = rule.Folder,
+        Enabled = rule.Enabled,
+        Mode = rule.Mode.ToString(),
+        Copies = rule.Copies,
+        OnlyOnParts = rule.OnlyOnParts.ToList(),
+        VerifyByContent = rule.VerifyByContent,
+        Surplus = rule.Surplus.ToString(),
+    };
+
+    private IpcResponse SetDuplicationRule(IpcCall call)
+    {
+        var request = call.PayloadAs<DuplicationRuleRequest>();
+        var dto = request.Rule;
+
+        if (dto is null)
+        {
+            return IpcResponse.Failure(call.Request.Id, IpcErrorCodes.InvalidRequest, "No rule was given.");
+        }
+
+        if (!Enum.TryParse<DuplicationMode>(dto.Mode, ignoreCase: true, out var mode))
+        {
+            return IpcResponse.Failure(
+                call.Request.Id, IpcErrorCodes.InvalidRequest, $"'{dto.Mode}' is not a known duplication mode.");
+        }
+
+        if (!Enum.TryParse<SurplusCopies>(dto.Surplus, ignoreCase: true, out var surplus))
+        {
+            return IpcResponse.Failure(
+                call.Request.Id, IpcErrorCodes.InvalidRequest, $"'{dto.Surplus}' is not a known surplus setting.");
+        }
+
+        if (mode is DuplicationMode.Copies && dto.Copies < DuplicationRule.MinimumCopies)
+        {
+            return IpcResponse.Failure(
+                call.Request.Id,
+                IpcErrorCodes.InvalidRequest,
+                $"A protected folder keeps at least {DuplicationRule.MinimumCopies} copies; one copy is not a copy.");
+        }
+
+        _engine.SetDuplicationRule(request.PoolId, new DuplicationRule
+        {
+            Id = dto.Id,
+            Folder = dto.Folder,
+            Enabled = dto.Enabled,
+            Mode = mode,
+            Copies = dto.Copies,
+            OnlyOnParts = dto.OnlyOnParts,
+            VerifyByContent = dto.VerifyByContent,
+            Surplus = surplus,
+        });
+
+        return Ok(call.Request.Id, Duplication(request.PoolId));
+    }
+
+    private IpcResponse RemoveDuplicationRule(IpcCall call)
+    {
+        var request = call.PayloadAs<DuplicationRuleRequest>();
+
+        if (!_engine.RemoveDuplicationRule(request.PoolId, request.RuleId))
+        {
+            return IpcResponse.Failure(
+                call.Request.Id, IpcErrorCodes.NotFound, $"No protected folder {request.RuleId:D} in that pool.");
+        }
+
+        return Ok(call.Request.Id, Duplication(request.PoolId));
+    }
+
+    private IpcResponse SetDuplicationOptions(IpcCall call)
+    {
+        var request = call.PayloadAs<DuplicationOptionsDto>();
+
+        if (request.MaxBytesPerSecond is <= 0)
+        {
+            return IpcResponse.Failure(
+                call.Request.Id, IpcErrorCodes.InvalidRequest, "The copy rate has to be above zero.");
+        }
+
+        _engine.UpdateDuplicationSettings(settings =>
+        {
+            settings.Enabled = request.Enabled ?? settings.Enabled;
+            settings.MaxBytesPerSecond = request.MaxBytesPerSecond ?? settings.MaxBytesPerSecond;
+            settings.ScanIntervalMinutes = request.ScanIntervalMinutes ?? settings.ScanIntervalMinutes;
+        });
+
+        return Ok(call.Request.Id, new DuplicationResult
+        {
+            Enabled = _engine.Config.Duplication.Enabled,
+            MaxBytesPerSecond = _engine.Config.Duplication.MaxBytesPerSecond,
+            ScanIntervalMinutes = _engine.Config.Duplication.ScanIntervalMinutes,
+        });
+    }
+
+    private async Task<IpcResponse> RunDuplicationAsync(IpcCall call, CancellationToken cancellationToken)
+    {
+        var poolId = PoolIdOf(call);
+        var result = await _engine.DuplicateOnceAsync(poolId, cancellationToken).ConfigureAwait(false);
+
+        return Ok(call.Request.Id, new DuplicationRunResultDto
+        {
+            CopiesAdded = result.CopiesAdded,
+            CopiesRefreshed = result.CopiesRefreshed,
+            CopiesRemoved = result.CopiesRemoved,
+            BytesWritten = result.BytesWritten,
+            Skipped = result.Skipped,
+            Problems = result.Problems.Take(ProblemsReported).ToList(),
+        });
+    }
+
+    private const int ProblemsReported = 20;
 
     private IpcResponse RegenerateWebToken(IpcCall call)
     {

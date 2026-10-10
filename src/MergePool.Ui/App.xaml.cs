@@ -59,6 +59,7 @@ public partial class App : Application
         _viewModel.Web.CopyToClipboard = CopyToClipboard;
         _viewModel.Web.OpenInBrowser = OpenInExplorer;
         _viewModel.Updates.RelaunchWindow = RelaunchWindow;
+        _viewModel.Duplication.ConfirmAction = Confirm;
 
         _window = new MainWindow { DataContext = _viewModel };
         _window.Closing += OnWindowClosing;
@@ -69,6 +70,8 @@ public partial class App : Application
         _viewModel.StatusChanged += (_, status) => _tray?.SetStatus(status);
         _viewModel.Updates.NewVersionFound += (_, version) =>
             _tray?.Notify("MergePool update", $"Version {version} is available and will install itself.");
+
+        _viewModel.Updates.WindowLeftBehind += (_, executable) => ReopenOnNewVersion(executable);
 
         _instance.ListenForActivation(() => Dispatcher.Invoke(ShowWindow));
 
@@ -115,6 +118,47 @@ public partial class App : Application
     }
 
     /// <summary>
+    /// Reopens this window on the version the service has moved to, without being asked. An update
+    /// that needs a click is not an automatic update.
+    /// </summary>
+    /// <remarks>
+    /// A window nobody is looking at is replaced straight away. A window in front of someone gets a
+    /// short grace period first, so the banner has been readable for a moment and a click does not
+    /// land in a window that is disappearing — being yanked mid-sentence is not seamless either.
+    /// </remarks>
+    private void ReopenOnNewVersion(string executable)
+    {
+        if (!StartupRegistration.SeamlessRestartEnabled())
+        {
+            return;
+        }
+
+        var hidden = _window is null || !_window.IsVisible;
+
+        if (hidden)
+        {
+            // Nothing on screen to interrupt, and it comes back where it was: in the tray.
+            RelaunchWindow(executable, inTray: true);
+            return;
+        }
+
+        var grace = new DispatcherTimer { Interval = TimeSpan.FromSeconds(20) };
+        grace.Tick += (_, _) =>
+        {
+            grace.Stop();
+
+            // Re-checked on the way out: it may have been closed to the tray, or turned off, in the
+            // twenty seconds since.
+            if (StartupRegistration.SeamlessRestartEnabled())
+            {
+                RelaunchWindow(executable, inTray: _window is null || !_window.IsVisible);
+            }
+        };
+
+        grace.Start();
+    }
+
+    /// <summary>
     /// Replaces this window with the one at <paramref name="executable"/>, which is how a window
     /// left behind by an update catches up.
     /// </summary>
@@ -124,13 +168,17 @@ public partial class App : Application
     /// nothing would have changed. If starting the new copy fails, the hold is taken back, because
     /// running without it is how a second window ends up open.
     /// </remarks>
-    private bool RelaunchWindow(string executable)
+    private bool RelaunchWindow(string executable) => RelaunchWindow(executable, inTray: false);
+
+    private bool RelaunchWindow(string executable, bool inTray)
     {
         _instance?.Dispose();
         _instance = null;
 
-        // No --tray: the person asked for this window, so the new one opens in front of them.
-        if (!Restart(executable, []))
+        // Comes back the way it went: in front of someone who asked for it, in the tray otherwise.
+        string[] arguments = inTray ? [StartupRegistration.TrayArgument] : [];
+
+        if (!Restart(executable, arguments))
         {
             _instance = SingleInstance.Acquire();
             _instance.ListenForActivation(() => Dispatcher.Invoke(ShowWindow));

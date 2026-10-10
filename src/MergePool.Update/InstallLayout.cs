@@ -52,7 +52,18 @@ public sealed class InstallLayout(string installRoot)
         InstalledVersions().FirstOrDefault(v => !string.Equals(v, version, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Removes old versions, always keeping the active one and the newest few.</summary>
-    public IReadOnlyList<string> PruneOldVersions(string activeVersion, int keep = 2)
+    /// <param name="activeVersion">The version running now. Never removed.</param>
+    /// <param name="keep">How many of the newest versions to keep, the active one included.</param>
+    /// <param name="stillReferenced">
+    /// Versions something is still pointing at by name — a start-up entry or a shortcut written
+    /// before MergePool used the version-independent path. Removing one of those would leave that
+    /// shortcut opening nothing at all, which is worse than a directory nobody needed, so they are
+    /// kept until whatever names them has been repaired.
+    /// </param>
+    public IReadOnlyList<string> PruneOldVersions(
+        string activeVersion,
+        int keep = 2,
+        IEnumerable<string>? stillReferenced = null)
     {
         var removed = new List<string>();
         var versions = InstalledVersions();
@@ -60,6 +71,7 @@ public sealed class InstallLayout(string installRoot)
         var protectedVersions = versions
             .Where(v => string.Equals(v, activeVersion, StringComparison.OrdinalIgnoreCase))
             .Concat(versions.Take(Math.Max(1, keep)))
+            .Concat(stillReferenced ?? [])
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var version in versions.Where(v => !protectedVersions.Contains(v)))

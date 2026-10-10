@@ -15,6 +15,18 @@ public static class PoolPartLayout
     /// <summary>Metadata file written inside a pool part. Advisory only: the files are the truth.</summary>
     public const string MarkerFileName = "poolpart.json";
 
+    /// <summary>
+    /// Folder at the part root for work in progress — a copy being written before it is moved into
+    /// place. Part of the data format: it is hidden from the pool namespace, so anything an older or
+    /// newer build leaves here is never mistaken for a pooled file.
+    /// </summary>
+    public const string WorkFolderName = ".mergepool-work";
+
+    /// <summary>Names at a part root that belong to MergePool and never appear inside the pool.</summary>
+    public static bool IsInternalRootName(string name) =>
+        string.Equals(name, MarkerFileName, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(name, WorkFolderName, StringComparison.OrdinalIgnoreCase);
+
     public static string FolderName(Guid partId) =>
         string.Create(CultureInfo.InvariantCulture, $"{FolderPrefix}{partId:D}");
 

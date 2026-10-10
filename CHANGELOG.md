@@ -12,6 +12,75 @@ change:
 - **Config schema** — `config.json` `schemaVersion`, migrated forward only, backed up first,
   unknown fields preserved.
 
+## [0.7.0] - 2026-10-10
+
+Data format: a reserved `.mergepool-work` folder is added at each pool part root, hidden from the
+pool namespace — see below. Config schema: unchanged. A `duplication` section is added to each pool
+and to the root with defaults, and a 0.6.0 build reads the file without migrating.
+
+### Added
+
+- **Protected folders: a folder inside a pool kept on more than one drive.** Point MergePool at
+  `Photos`, or at the whole pool, and every file in it is kept on several drives at once. Lose a
+  drive and the files are still there on the others. The copies are ordinary files in the usual
+  mirrored path on each drive, so they are readable with MergePool uninstalled, like everything else
+  in a pool.
+- **How many copies is yours to choose.** Either a number — two survives losing one drive, three
+  survives losing two at once — or a copy on *every* drive in the pool, however many that turns out
+  to be. Asking for more copies than the pool has drives is not quietly rounded down: it says the
+  pool needs another drive.
+- **Further options per folder.** Keep copies off a drive you do not trust by naming the drives a
+  folder may use. Check copies byte for byte rather than by size and date, which catches a copy that
+  has rotted on the disk. And decide what happens to copies a rule no longer asks for: removed, so
+  the rule is what is on the disks, or kept, so nothing is ever deleted to satisfy a rule.
+- **A Protected tab**, with a line per folder saying whether it is safe yet — "all 4,182 files have
+  2 copies, 41.3 GB protected", or how much is still to copy — plus **Check now**, **Pause** and
+  **Stop protecting**. Stopping leaves every copy already on your drives exactly where it is.
+- **The same from a browser and over the wire.** `GET`/`POST /api/pools/{id}/protected`,
+  `DELETE /api/pools/{id}/protected/{ruleId}`, `POST /api/pools/{id}/protected/run`; protocol 5 adds
+  `duplication.get`, `duplication.setRule`, `duplication.removeRule`, `duplication.setOptions` and
+  `duplication.runNow` with capability `duplication`. `MinimumSupported` stays 1.
+
+### Changed
+
+- **An update now needs nothing from you.** Checking and installing were already automatic; what was
+  not was the window, which stayed on the old version until it was clicked. It now reopens itself on
+  the new one — straight away if it is sitting in the notification area, and after twenty seconds if
+  it is in front of you, so the banner has been readable for a moment and a click does not land in a
+  window that is disappearing. **Reopen this window on the new version by itself** in Settings turns
+  it off for anyone who would rather be asked.
+
+### Fixed
+
+- **An update could delete the version a sign-in entry still named.** Versions before 0.5.0 wrote the
+  window's own path into the user's Run key, so an entry can name a version directory rather than the
+  version-independent one. With old versions now removed after an update, pruning could delete exactly
+  what that entry pointed at, and sign-in would open nothing at all with no explanation. The updater
+  reads the Run entries of every loaded user hive and keeps any version they name, until the window
+  repairs its own entry the next time it starts. It only reads: quietly editing a signed-out user's
+  registry is not an updater's business.
+- **A rename moved only the copy the pool was reading, so the old name came back.** `PoolOperations`
+  renamed the file on the drive that won the union's newest-wins comparison and left the others under
+  the old name — and a listing is the union of every drive, so the old name simply reappeared. Every
+  copy now follows a rename. A pool without protected folders never had more than one copy of a file,
+  so this could not be hit before this release.
+
+### Notes
+
+- Copying is as timid as evening out drive usage: rate-capped, pausable, it gives way to real IO, and
+  a file something else has open is left for the next sweep rather than copied mid-change.
+- A copy is written to a hidden `.mergepool-work` folder in the part and only then moved into place.
+  A half-written copy is never visible in the pool, which matters here more than anywhere: the pool
+  reads the newest copy of a file, and a half-written one would be the newest. The folder is part of
+  the data format and is excluded from the pool namespace, so nothing left in it by a build of any
+  version is mistaken for a pooled file.
+- Copies carry the original's timestamps, so a copy is never mistaken for a newer version of the file
+  it is a copy of, and a folder in order is not copied again on every sweep.
+- Two copies on one drive is not two copies, so a drive is never given a second copy of a file. The
+  last copy of a file is never deleted, whatever a rule says.
+- This is duplication, not backup: the copies live on the pool's own drives. It survives a drive
+  dying. It does not survive a fire, a theft, or deleting the file yourself.
+
 ## [0.6.0] - 2026-09-26
 
 Data format: unchanged. Config schema: unchanged.

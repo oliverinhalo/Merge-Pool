@@ -22,7 +22,12 @@ var coordinator = new UpgradeCoordinator(
     layout,
     new WindowsCurrentLinkManager(layout),
     new WindowsServiceControl(arguments.GetValueOrDefault("service") ?? "MergePool"),
-    new IpcEngineControl(arguments.GetValueOrDefault("pipe") ?? "MergePool.Engine"));
+    new IpcEngineControl(arguments.GetValueOrDefault("pipe") ?? "MergePool.Engine"),
+    new UpgradeOptions
+    {
+        // Pruning must not delete a version somebody's sign-in entry still names by hand.
+        VersionsStillReferenced = () => StartupEntryScan.ReferencedVersions(layout),
+    });
 
 Console.WriteLine($"Upgrading {layout} to {targetVersion}.");
 

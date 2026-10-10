@@ -31,6 +31,9 @@ public sealed class MergePoolConfig
     [JsonPropertyName("web")]
     public WebOptions Web { get; set; } = new();
 
+    [JsonPropertyName("duplication")]
+    public DuplicationSettings Duplication { get; set; } = new();
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement> AdditionalData { get; set; } = [];
 }
@@ -53,8 +56,117 @@ public sealed class PoolDefinition
     [JsonPropertyName("drives")]
     public List<PoolDriveDefinition> Drives { get; set; } = [];
 
+    /// <summary>
+    /// Folders inside this pool that are kept on more than one drive. Empty means no folder is
+    /// duplicated, which is the behaviour of every build before this field existed.
+    /// </summary>
+    [JsonPropertyName("duplication")]
+    public List<DuplicationRule> Duplication { get; set; } = [];
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement> AdditionalData { get; set; } = [];
+}
+
+/// <summary>How many copies a duplicated folder keeps.</summary>
+public enum DuplicationMode
+{
+    /// <summary>A fixed number of copies, each on a different drive.</summary>
+    Copies = 0,
+
+    /// <summary>A copy on every drive in the pool, however many that turns out to be.</summary>
+    AllDrives = 1,
+}
+
+/// <summary>What to do with copies that a rule no longer calls for.</summary>
+public enum SurplusCopies
+{
+    /// <summary>Delete them, so the rule is what is on the disks.</summary>
+    Remove = 0,
+
+    /// <summary>Leave them alone. Nothing is ever deleted to satisfy a rule.</summary>
+    Keep = 1,
+}
+
+/// <summary>
+/// One protected folder: a path inside the pool whose files are kept on several drives, so losing a
+/// drive does not lose them.
+/// </summary>
+/// <remarks>
+/// <para>A rule covers a folder and everything under it. The pool root (<c>/</c>) is a valid folder,
+/// which is how a whole pool is protected.</para>
+/// <para>Copies are whole files on different drives — never pieces of a file, and never two copies on
+/// one drive, because two copies on one disk is one disk failure away from none.</para>
+/// </remarks>
+public sealed class DuplicationRule
+{
+    [JsonPropertyName("id")]
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    /// <summary>
+    /// The folder inside the pool, as a pool path: <c>Photos</c>, <c>Photos/2026</c>, or empty for
+    /// the whole pool.
+    /// </summary>
+    [JsonPropertyName("folder")]
+    public string Folder { get; set; } = string.Empty;
+
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; set; } = true;
+
+    [JsonPropertyName("mode")]
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public DuplicationMode Mode { get; set; } = DuplicationMode.Copies;
+
+    /// <summary>
+    /// Copies to keep when <see cref="Mode"/> is <see cref="DuplicationMode.Copies"/>. Two is the
+    /// least that means anything; three survives losing two drives at once.
+    /// </summary>
+    [JsonPropertyName("copies")]
+    public int Copies { get; set; } = DefaultCopies;
+
+    /// <summary>
+    /// Drives allowed to hold copies, by part id. Empty means any drive in the pool, which is what
+    /// almost everyone wants; naming drives is for keeping copies off a disk you do not trust.
+    /// </summary>
+    [JsonPropertyName("onlyOnParts")]
+    public List<Guid> OnlyOnParts { get; set; } = [];
+
+    /// <summary>
+    /// Compare copies by content, not just by size and last-write time. Catches a copy that has
+    /// rotted on the disk, at the cost of reading every byte of every copy on each pass.
+    /// </summary>
+    [JsonPropertyName("verifyByContent")]
+    public bool VerifyByContent { get; set; }
+
+    /// <summary>What happens to copies the rule no longer calls for.</summary>
+    [JsonPropertyName("surplus")]
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public SurplusCopies Surplus { get; set; } = SurplusCopies.Remove;
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement> AdditionalData { get; set; } = [];
+
+    public const int MinimumCopies = 2;
+
+    public const int DefaultCopies = 2;
+
+    /// <summary>
+    /// The copies this rule asks for. Always at least two — a rule asking for one copy is not
+    /// duplication — and, for a rule covering every drive, however many drives that is.
+    /// </summary>
+    public int RequestedCopies(int eligibleDrives) => Mode is DuplicationMode.AllDrives
+        ? Math.Max(0, eligibleDrives)
+        : Math.Max(MinimumCopies, Copies);
+
+    /// <summary>
+    /// The copies that can actually exist: never more than there are drives, because two copies on
+    /// one drive is one drive failure away from none. Below <see cref="RequestedCopies"/> means the
+    /// pool cannot keep this rule, which is reported rather than quietly rounded down.
+    /// </summary>
+    public int AchievableCopies(int eligibleDrives) =>
+        Math.Min(RequestedCopies(eligibleDrives), Math.Max(0, eligibleDrives));
+
+    /// <summary>Whether this rule governs a pool path. A rule covers its folder and everything under it.</summary>
+    public bool Covers(string poolPath) => Paths.PoolPath.IsAtOrUnder(poolPath, Paths.PoolPath.Normalize(Folder));
 }
 
 public sealed class PoolDriveDefinition
@@ -172,6 +284,43 @@ public sealed class PlacementOptions
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement> AdditionalData { get; set; } = [];
+}
+
+/// <summary>
+/// How duplication behaves across every pool. Which folders are duplicated, and how many copies
+/// they keep, is per pool — see <see cref="DuplicationRule"/>.
+/// </summary>
+public sealed class DuplicationSettings
+{
+    /// <summary>
+    /// Off means no copies are made or removed. The rules stay configured, so turning this back on
+    /// picks up where it left off rather than starting from nothing.
+    /// </summary>
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Cap on copy throughput, so duplication never competes with what you are doing.</summary>
+    [JsonPropertyName("maxBytesPerSecond")]
+    public long MaxBytesPerSecond { get; set; } = 32L * 1024 * 1024;
+
+    /// <summary>How often the protected folders are checked over.</summary>
+    [JsonPropertyName("scanIntervalMinutes")]
+    public double ScanIntervalMinutes { get; set; } = 15;
+
+    /// <summary>Free space left on a drive after a copy lands on it.</summary>
+    [JsonPropertyName("copyHeadroomBytes")]
+    public long CopyHeadroomBytes { get; set; } = 256L * 1024 * 1024;
+
+    /// <summary>Hold off while the pool is serving real IO, and carry on when it goes quiet.</summary>
+    [JsonPropertyName("pauseWhileBusy")]
+    public bool PauseWhileBusy { get; set; } = true;
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement> AdditionalData { get; set; } = [];
+
+    public int MegabytesPerSecond => (int)Math.Max(1, MaxBytesPerSecond / (1024 * 1024));
+
+    public TimeSpan ScanInterval => TimeSpan.FromMinutes(Math.Clamp(ScanIntervalMinutes, 1, 24 * 60));
 }
 
 public sealed class RebalanceOptions

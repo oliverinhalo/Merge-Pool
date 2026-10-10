@@ -595,3 +595,150 @@ public sealed class PlacementSettingsDto : IpcContract
     [JsonPropertyName("rebalanceMaxBytesPerSecond")]
     public long? RebalanceMaxBytesPerSecond { get; set; }
 }
+
+/// <summary>One protected folder as the wire describes it. Protocol 5.</summary>
+public sealed class DuplicationRuleDto : IpcContract
+{
+    [JsonPropertyName("id")]
+    public Guid Id { get; set; }
+
+    /// <summary>The folder inside the pool. Empty means the whole pool.</summary>
+    [JsonPropertyName("folder")]
+    public string Folder { get; set; } = string.Empty;
+
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>One of Copies, AllDrives.</summary>
+    [JsonPropertyName("mode")]
+    public string Mode { get; set; } = "Copies";
+
+    [JsonPropertyName("copies")]
+    public int Copies { get; set; } = 2;
+
+    /// <summary>Drives allowed to hold copies, by part id. Empty means any drive in the pool.</summary>
+    [JsonPropertyName("onlyOnParts")]
+    public List<Guid> OnlyOnParts { get; set; } = [];
+
+    [JsonPropertyName("verifyByContent")]
+    public bool VerifyByContent { get; set; }
+
+    /// <summary>One of Remove, Keep.</summary>
+    [JsonPropertyName("surplus")]
+    public string Surplus { get; set; } = "Remove";
+
+    // ---- Reported back, not set ----
+
+    /// <summary>Copies the rule asks for.</summary>
+    [JsonPropertyName("requestedCopies")]
+    public int RequestedCopies { get; set; }
+
+    /// <summary>Copies that can exist. Below requestedCopies means the pool needs more drives.</summary>
+    [JsonPropertyName("possibleCopies")]
+    public int PossibleCopies { get; set; }
+
+    [JsonPropertyName("files")]
+    public int Files { get; set; }
+
+    /// <summary>Files that already have every copy the rule asks for.</summary>
+    [JsonPropertyName("protectedFiles")]
+    public int ProtectedFiles { get; set; }
+
+    [JsonPropertyName("bytes")]
+    public long Bytes { get; set; }
+
+    /// <summary>Bytes still to be copied before every file is protected.</summary>
+    [JsonPropertyName("pendingBytes")]
+    public long PendingBytes { get; set; }
+
+    [JsonPropertyName("drivesAvailable")]
+    public int DrivesAvailable { get; set; }
+
+    /// <summary>The first few files the rule cannot be met for, and why.</summary>
+    [JsonPropertyName("problems")]
+    public List<string> Problems { get; set; } = [];
+
+    [JsonPropertyName("satisfied")]
+    public bool Satisfied { get; set; }
+}
+
+/// <summary>A pool's protected folders and the settings that cover all of them. Protocol 5.</summary>
+public sealed class DuplicationResult : IpcContract
+{
+    [JsonPropertyName("poolId")]
+    public Guid PoolId { get; set; }
+
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; set; } = true;
+
+    [JsonPropertyName("maxBytesPerSecond")]
+    public long MaxBytesPerSecond { get; set; }
+
+    [JsonPropertyName("scanIntervalMinutes")]
+    public double ScanIntervalMinutes { get; set; }
+
+    [JsonPropertyName("rules")]
+    public List<DuplicationRuleDto> Rules { get; set; } = [];
+
+    /// <summary>Copies waiting to be made right now, across every rule.</summary>
+    [JsonPropertyName("copiesToAdd")]
+    public int CopiesToAdd { get; set; }
+
+    [JsonPropertyName("copiesToRefresh")]
+    public int CopiesToRefresh { get; set; }
+
+    [JsonPropertyName("copiesToRemove")]
+    public int CopiesToRemove { get; set; }
+
+    [JsonPropertyName("bytesToCopy")]
+    public long BytesToCopy { get; set; }
+}
+
+/// <summary>Duplication settings to change. Absent fields are left as they are. Protocol 5.</summary>
+public sealed class DuplicationOptionsDto : IpcContract
+{
+    [JsonPropertyName("enabled")]
+    public bool? Enabled { get; set; }
+
+    [JsonPropertyName("maxBytesPerSecond")]
+    public long? MaxBytesPerSecond { get; set; }
+
+    [JsonPropertyName("scanIntervalMinutes")]
+    public double? ScanIntervalMinutes { get; set; }
+}
+
+/// <summary>What one duplication pass did. Protocol 5.</summary>
+public sealed class DuplicationRunResultDto : IpcContract
+{
+    [JsonPropertyName("copiesAdded")]
+    public int CopiesAdded { get; set; }
+
+    [JsonPropertyName("copiesRefreshed")]
+    public int CopiesRefreshed { get; set; }
+
+    [JsonPropertyName("copiesRemoved")]
+    public int CopiesRemoved { get; set; }
+
+    [JsonPropertyName("bytesWritten")]
+    public long BytesWritten { get; set; }
+
+    /// <summary>Files left for next time: in use, or gone since the plan was made.</summary>
+    [JsonPropertyName("skipped")]
+    public int Skipped { get; set; }
+
+    [JsonPropertyName("problems")]
+    public List<string> Problems { get; set; } = [];
+}
+
+/// <summary>Names a pool and one of its rules. Protocol 5.</summary>
+public sealed class DuplicationRuleRequest : IpcContract
+{
+    [JsonPropertyName("poolId")]
+    public Guid PoolId { get; set; }
+
+    [JsonPropertyName("ruleId")]
+    public Guid RuleId { get; set; }
+
+    [JsonPropertyName("rule")]
+    public DuplicationRuleDto? Rule { get; set; }
+}
