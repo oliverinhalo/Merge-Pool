@@ -13,7 +13,7 @@
 #ifndef AppVersion
   ; build.ps1 passes /DAppVersion from Directory.Build.props. This is only the fallback for
   ; compiling the script straight from the Inno Setup IDE.
-  #define AppVersion "0.7.0"
+  #define AppVersion "0.8.0"
 #endif
 #define AppGuid "{6F0B2A1C-4E9D-4E6A-9E4F-3D1F1D4E7C21}"
 #define ServiceName "MergePool"
@@ -88,6 +88,7 @@ Filename: "{sys}\sc.exe"; Parameters: "delete {#ServiceName}"; Flags: runhidden 
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\current"
+Type: filesandordirs; Name: "{app}\.staging"
 Type: filesandordirs; Name: "{app}\versions"
 Type: files; Name: "{userstartup}\{#AppName}.lnk"
 
@@ -433,6 +434,14 @@ procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep <> ssPostInstall then
     Exit;
+
+  // Permissions first. A version staged by an updater before 0.8.0 was unpacked in the service's own
+  // temp directory and moved here, and a move keeps the permissions it had there: LocalSystem and
+  // administrators, nobody else. The window runs as whoever is signed in and cannot start from such
+  // a directory at all — that is the "CreateProcess failed: code 5" people hit on a copy that had
+  // updated itself. Putting the install root back to inheriting repairs every version at once.
+  RunHidden(ExpandConstant('{sys}\icacls.exe'),
+            '"' + ExpandConstant('{app}') + '" /reset /T /C /Q');
 
   if PointCurrentAt('{#AppVersion}') then
   begin

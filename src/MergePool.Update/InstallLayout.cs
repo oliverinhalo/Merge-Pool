@@ -17,12 +17,22 @@ public sealed class InstallLayout(string installRoot)
 
     public const string CurrentLink = "current";
 
+    /// <summary>Part of the on-disk layout: scratch space for a download being unpacked.</summary>
+    public const string StagingFolder = ".staging";
+
     public string InstallRoot { get; } = Path.GetFullPath(
         !string.IsNullOrWhiteSpace(installRoot) ? installRoot : throw new ArgumentException("An install root is required.", nameof(installRoot)));
 
     public string VersionsRoot => Path.Combine(InstallRoot, VersionsFolder);
 
     public string CurrentPath => Path.Combine(InstallRoot, CurrentLink);
+
+    /// <summary>
+    /// Where a download is unpacked before it becomes a version. Inside the install root, and
+    /// deliberately not inside <see cref="VersionsRoot"/>: a half-unpacked directory there would be
+    /// listed as an installed version and could be pruned mid-download.
+    /// </summary>
+    public string StagingRoot => Path.Combine(InstallRoot, StagingFolder);
 
     public string VersionPath(string version)
     {

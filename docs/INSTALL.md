@@ -174,6 +174,11 @@ and you will find the same files in both. Nothing needs MergePool to read them.
 - **Keep copies this rule no longer asks for** — off means lowering the number of copies deletes the
   extra ones; on means nothing is ever deleted to satisfy a rule.
 
+**To change a folder later**, click it in the list. Its settings load into the panel below, where
+the heading reads "Change this protected folder" and the button says **Save changes** — asking for
+more copies makes them on the next sweep, asking for fewer removes the spare ones unless you have
+ticked **Never delete a copy**. **Cancel** goes back to describing a new folder.
+
 **Stop protecting** a folder and the copies already on your drives stay exactly where they are.
 Nothing is deleted; new and changed files in it simply stop being copied.
 
@@ -356,6 +361,18 @@ If the window is opened from a path naming a version directory, such as
 `C:\Program Files\MergePool\versions\0.4.0\MergePool.exe`, it hands over to the newest installed
 version on start-up rather than opening the old one. Shortcuts should point at
 `C:\Program Files\MergePool\current\MergePool.exe`, which always resolves to the installed version.
+
+**"CreateProcess failed: code 5. Access is denied" opening MergePool**
+
+On a copy that had updated itself, the version the updater installed could only be read by the
+service account that downloaded it, so your own account could not start the window from it. Fixed in
+0.8.0; installing 0.8.0 or newer once also repairs the versions already on disk.
+
+To repair it by hand instead, from an administrator PowerShell:
+
+```powershell
+icacls "C:\Program Files\MergePool" /reset /T /C /Q
+```
 
 **Setup ended with "CreateProcess failed: code 5"**
 

@@ -51,7 +51,7 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
         OpenPoolCommand = new AsyncCommand(OpenSelectedPoolAsync, () => SelectedPool is { IsMounted: true });
 
         _timer = new DispatcherTimer { Interval = RefreshInterval };
-        _timer.Tick += async (_, _) => await RefreshAsync(_shutdown.Token).ConfigureAwait(true);
+        _timer.Tick += OnTick;
     }
 
     public ObservableCollection<DriveViewModel> Drives { get; } = [];
@@ -239,7 +239,39 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
         _timer.Start();
     }
 
+    /// <summary>
+    /// The periodic refresh. Nothing is awaited by anyone, so anything escaping here would reach
+    /// the dispatcher's unhandled handler and be shown to the user as an error — and a refresh
+    /// interrupted because MergePool is closing is not an error.
+    /// </summary>
+    private async void OnTick(object? sender, EventArgs e)
+    {
+        try
+        {
+            await RefreshAsync(_shutdown.Token).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// Reads everything the window shows. Cancellation means the window is going away, or is being
+    /// replaced by a newer version of itself, so it returns quietly rather than throwing: the
+    /// request it was in the middle of no longer has anywhere to put its answer.
+    /// </summary>
     public async Task RefreshAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await RefreshCoreAsync(cancellationToken).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task RefreshCoreAsync(CancellationToken cancellationToken)
     {
         if (cancellationToken.IsCancellationRequested)
         {
