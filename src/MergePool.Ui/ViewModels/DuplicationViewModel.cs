@@ -118,6 +118,7 @@ public sealed class DuplicationViewModel : ViewModelBase
     private string? _message;
     private bool _busy;
     private ProtectedFolderViewModel? _selected;
+    private Guid _editing;
 
     public DuplicationViewModel(ServiceConnection service, Func<CancellationToken> token)
     {
@@ -125,6 +126,7 @@ public sealed class DuplicationViewModel : ViewModelBase
         _token = token ?? throw new ArgumentNullException(nameof(token));
 
         AddCommand = new AsyncCommand(AddAsync, () => !_busy && CanAdd);
+        StopEditingCommand = new AsyncCommand(StopEditingAsync, () => IsEditing);
         ProtectEverythingCommand = new AsyncCommand(ProtectEverythingAsync, () => !_busy && HasPool);
         RunNowCommand = new AsyncCommand(RunNowAsync, () => !_busy && HasPool);
         RemoveCommand = new AsyncCommand(RemoveSelectedAsync, () => !_busy && Selected is not null);
@@ -141,6 +143,9 @@ public sealed class DuplicationViewModel : ViewModelBase
 
     public AsyncCommand TogglePauseCommand { get; }
 
+    /// <summary>Leaves the folder being changed and goes back to describing a new one.</summary>
+    public AsyncCommand StopEditingCommand { get; }
+
     /// <summary>Set by the window, which owns asking the user things.</summary>
     public Func<string, string, string, bool>? ConfirmAction { get; set; }
 
@@ -155,13 +160,87 @@ public sealed class DuplicationViewModel : ViewModelBase
         get => _selected;
         set
         {
-            if (Set(ref _selected, value))
+            if (!Set(ref _selected, value))
             {
-                RemoveCommand.RaiseCanExecuteChanged();
-                TogglePauseCommand.RaiseCanExecuteChanged();
-                Raise(nameof(PauseLabel));
+                return;
             }
+
+            // Picking a folder loads its settings into the editor below, so changing one is the
+            // same action as creating one rather than a separate mode to find.
+            if (value is not null)
+            {
+                LoadForEditing(value.Rule);
+            }
+
+            RemoveCommand.RaiseCanExecuteChanged();
+            TogglePauseCommand.RaiseCanExecuteChanged();
+            StopEditingCommand.RaiseCanExecuteChanged();
+            Raise(nameof(PauseLabel));
+            Raise(nameof(IsEditing));
+            Raise(nameof(EditorHeading));
+            Raise(nameof(SaveLabel));
         }
+    }
+
+    /// <summary>Whether the editor is changing a folder that is already protected.</summary>
+    public bool IsEditing => _editing != Guid.Empty;
+
+    public string EditorHeading => IsEditing
+        ? "CHANGE THIS PROTECTED FOLDER"
+        : "PROTECT ANOTHER FOLDER";
+
+    public string SaveLabel => IsEditing ? "Save changes" : "Protect this folder";
+
+    public string EditorHint => IsEditing
+        ? "Changing the number of copies takes effect on the next sweep: more copies are made, and extra ones are removed only if you have asked for that below."
+        : "The folder and everything inside it. Files added to it later are protected too.";
+
+    private void LoadForEditing(DuplicationRuleDto rule)
+    {
+        _editing = rule.Id;
+
+        _newFolder = rule.Folder;
+        _newEveryDrive = rule.Mode.Equals("AllDrives", StringComparison.OrdinalIgnoreCase);
+        _newCopies = Math.Clamp(rule.Copies, DuplicationRule.MinimumCopies, 16);
+        _newVerifyByContent = rule.VerifyByContent;
+        _newKeepSurplus = rule.Surplus.Equals("Keep", StringComparison.OrdinalIgnoreCase);
+
+        Raise(nameof(NewFolder));
+        Raise(nameof(NewEveryDrive));
+        Raise(nameof(NewCopies));
+        Raise(nameof(NewVerifyByContent));
+        Raise(nameof(NewKeepSurplus));
+        Raise(nameof(CopiesText));
+        Raise(nameof(CanAdd));
+        Raise(nameof(EditorHint));
+        AddCommand.RaiseCanExecuteChanged();
+    }
+
+    private Task StopEditingAsync()
+    {
+        _editing = Guid.Empty;
+        _selected = null;
+
+        _newFolder = string.Empty;
+        _newEveryDrive = false;
+        _newCopies = DuplicationRule.DefaultCopies;
+        _newVerifyByContent = false;
+        _newKeepSurplus = false;
+
+        Raise(nameof(Selected));
+        Raise(nameof(NewFolder));
+        Raise(nameof(NewEveryDrive));
+        Raise(nameof(NewCopies));
+        Raise(nameof(NewVerifyByContent));
+        Raise(nameof(NewKeepSurplus));
+        Raise(nameof(CopiesText));
+        Raise(nameof(IsEditing));
+        Raise(nameof(EditorHeading));
+        Raise(nameof(SaveLabel));
+        Raise(nameof(EditorHint));
+        RaiseAll();
+
+        return Task.CompletedTask;
     }
 
     public string PauseLabel => Selected?.IsEnabled == false ? "Resume" : "Pause";
@@ -313,17 +392,24 @@ public sealed class DuplicationViewModel : ViewModelBase
         Raise(nameof(Headline));
         Raise(nameof(CanAdd));
 
+        Raise(nameof(IsEditing));
+        Raise(nameof(EditorHeading));
+        Raise(nameof(SaveLabel));
+        Raise(nameof(EditorHint));
+
         AddCommand.RaiseCanExecuteChanged();
         ProtectEverythingCommand.RaiseCanExecuteChanged();
         RunNowCommand.RaiseCanExecuteChanged();
         RemoveCommand.RaiseCanExecuteChanged();
         TogglePauseCommand.RaiseCanExecuteChanged();
+        StopEditingCommand.RaiseCanExecuteChanged();
     }
 
     private Task AddAsync() => SetRuleAsync(new DuplicationRuleDto
     {
+        Id = _editing,
         Folder = NewFolder.Trim(),
-        Enabled = true,
+        Enabled = Selected?.IsEnabled ?? true,
         Mode = NewEveryDrive ? "AllDrives" : "Copies",
         Copies = NewCopies,
         VerifyByContent = NewVerifyByContent,
@@ -357,12 +443,20 @@ public sealed class DuplicationViewModel : ViewModelBase
                 return;
             }
 
-            Apply(state);
-            NewFolder = string.Empty;
+            var changed = rule.Id != Guid.Empty;
+            var name = string.IsNullOrEmpty(rule.Folder) ? "Everything in this pool" : rule.Folder;
 
-            Message = string.IsNullOrEmpty(rule.Folder)
-                ? "Everything in this pool is now protected. Copies are made in the background."
-                : $"'{rule.Folder}' is now protected. Copies are made in the background.";
+            Apply(state);
+
+            if (!changed)
+            {
+                _editing = Guid.Empty;
+                NewFolder = string.Empty;
+            }
+
+            Message = changed
+                ? $"{name} updated. The next sweep brings the copies in line — nothing is deleted unless you asked for extra copies to be removed."
+                : $"{name} is now protected. The copies are made in the background; the list above shows how far along it is.";
         }
         catch (Exception exception) when (exception is IpcException or IOException)
         {
@@ -410,7 +504,8 @@ public sealed class DuplicationViewModel : ViewModelBase
             }
 
             Apply(state);
-            Message = $"'{folder.Folder}' is no longer protected. Nothing was deleted.";
+            _editing = Guid.Empty;
+            Message = $"{folder.Folder} is no longer protected. Every copy already on your drives was left where it is — nothing was deleted.";
         }
         catch (Exception exception) when (exception is IpcException or IOException)
         {

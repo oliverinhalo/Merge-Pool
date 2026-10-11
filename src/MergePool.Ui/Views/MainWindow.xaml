@@ -115,12 +115,12 @@
       </Border>
     </StackPanel>
 
-    <!-- Body -->
+    <!-- Body. The divider between the two panels is draggable, and where it is put is remembered. -->
     <Grid Grid.Row="2">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="1.25*" MinWidth="440" />
+        <ColumnDefinition x:Name="LeftPane" Width="1.25*" MinWidth="360" />
         <ColumnDefinition Width="16" />
-        <ColumnDefinition Width="1*" MinWidth="400" />
+        <ColumnDefinition x:Name="RightPane" Width="1*" MinWidth="340" />
       </Grid.ColumnDefinitions>
 
       <!-- Left: the pools -->
@@ -537,7 +537,10 @@
 
                     <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,8"
                                Visibility="{Binding Duplication.Folders.Count, Converter={StaticResource ZeroToVisibility}}"
-                               Text="Nothing yet. Add a folder below, or protect the whole pool." />
+                               Text="No folder in this pool is protected yet. Describe one below, or protect the whole pool in one go." />
+
+                    <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,6"
+                               Text="Click a folder to change how many copies it keeps, or to pause or stop protecting it." />
 
                     <ListBox ItemsSource="{Binding Duplication.Folders}"
                              SelectedItem="{Binding Duplication.Selected, Mode=TwoWay}"
@@ -546,20 +549,25 @@
                       <ListBox.ItemTemplate>
                         <DataTemplate>
                           <StackPanel Margin="0,4,0,8">
-                            <StackPanel Orientation="Horizontal">
-                              <Ellipse Width="8" Height="8" VerticalAlignment="Center" Margin="0,0,8,0"
+                            <Grid>
+                              <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                              </Grid.ColumnDefinitions>
+
+                              <Ellipse Grid.Column="0" Width="8" Height="8" VerticalAlignment="Top" Margin="0,5,8,0"
                                        Fill="{Binding IsSatisfied, Converter={StaticResource StateDotBrush}}" />
-                              <TextBlock Text="{Binding Folder}" FontWeight="SemiBold"
-                                         Foreground="{DynamicResource TextBrush}" />
-                              <TextBlock Text="{Binding Copies}" Style="{StaticResource Caption}" Margin="10,0,0,0"
-                                         VerticalAlignment="Center" />
-                            </StackPanel>
-                            <TextBlock Text="{Binding State}" Style="{StaticResource Caption}"
-                                       TextWrapping="Wrap" Margin="16,2,0,0" />
-                            <TextBlock Text="{Binding Extras}" Style="{StaticResource Caption}"
-                                       TextWrapping="Wrap" Margin="16,2,0,0" />
-                            <TextBlock Text="{Binding Problems}" Style="{StaticResource Caption}"
-                                       TextWrapping="Wrap" Margin="16,2,0,0"
+
+                              <!-- A folder path can be long and the panel is resizable, so it wraps. -->
+                              <StackPanel Grid.Column="1">
+                                <TextBlock Text="{Binding Folder}" FontWeight="SemiBold" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextBrush}" />
+                                <TextBlock Text="{Binding Copies}" Style="{StaticResource Caption}" />
+                              </StackPanel>
+                            </Grid>
+                            <TextBlock Text="{Binding State}" Style="{StaticResource Caption}" Margin="16,2,0,0" />
+                            <TextBlock Text="{Binding Extras}" Style="{StaticResource Caption}" Margin="16,2,0,0" />
+                            <TextBlock Text="{Binding Problems}" Style="{StaticResource Caption}" Margin="16,2,0,0"
                                        Foreground="{DynamicResource WarningBrush}"
                                        Visibility="{Binding HasProblems, Converter={StaticResource BoolToVisibility}}" />
                           </StackPanel>
@@ -581,18 +589,22 @@
                   </StackPanel>
                 </Border>
 
-                <!-- Adding one -->
-                <TextBlock Text="PROTECT A FOLDER" Style="{StaticResource Subheading}" />
+                <!-- Adding one, or changing the one picked above -->
+                <TextBlock Text="{Binding Duplication.EditorHeading}" Style="{StaticResource Subheading}" />
                 <Border Style="{StaticResource InsetCard}" Margin="0,0,0,16">
                   <StackPanel>
                     <TextBlock Text="FOLDER INSIDE THE POOL" Style="{StaticResource Subheading}" />
                     <TextBox Text="{Binding Duplication.NewFolder, UpdateSourceTrigger=PropertyChanged}"
                              Margin="0,0,0,4" />
                     <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,12"
-                               Text="For example Photos, or Photos\2026. The folder and everything under it." />
+                               Text="For example Photos, or Photos\2026 — as the folder appears inside the pool, not a full Windows path." />
+                    <TextBlock Style="{StaticResource Caption}" Margin="0,2,0,12"
+                               Text="{Binding Duplication.EditorHint}" />
 
-                    <CheckBox IsChecked="{Binding Duplication.NewEveryDrive, Mode=TwoWay}" Margin="0,0,0,10"
-                              Content="A copy on every drive in the pool" />
+                    <CheckBox IsChecked="{Binding Duplication.NewEveryDrive, Mode=TwoWay}" Margin="0,0,0,10">
+                      <TextBlock TextWrapping="Wrap" FontSize="13"
+                                 Text="Keep a copy on every drive in the pool, however many drives it ends up having" />
+                    </CheckBox>
 
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,4"
                                 IsEnabled="{Binding Duplication.NewEveryDrive, Converter={StaticResource NotBool}}">
@@ -611,20 +623,25 @@
 
                     <CheckBox IsChecked="{Binding Duplication.NewVerifyByContent, Mode=TwoWay}" Margin="0,0,0,10">
                       <TextBlock TextWrapping="Wrap" FontSize="13"
-                                 Text="Check copies byte for byte, not just by size and date. Catches a copy that has rotted on the disk; reads every byte of every copy on each sweep." />
+                                 Text="Compare copies byte for byte, not just by size and date. This catches a copy that has gone bad on the disk without looking any different. It reads every byte of every copy each time it sweeps, so leave it off unless you want that." />
                     </CheckBox>
 
                     <CheckBox IsChecked="{Binding Duplication.NewKeepSurplus, Mode=TwoWay}" Margin="0,0,0,14">
                       <TextBlock TextWrapping="Wrap" FontSize="13"
-                                 Text="Keep copies this rule no longer asks for. Off means lowering the number of copies deletes the extra ones; on means nothing is ever deleted to satisfy a rule." />
+                                 Text="Never delete a copy. Leave this off and asking for fewer copies removes the spare ones; turn it on and MergePool only ever adds copies, never takes one away." />
                     </CheckBox>
 
                     <StackPanel Orientation="Horizontal">
-                      <Button Content="Protect this folder" Style="{StaticResource PrimaryButton}" MinWidth="152"
-                              Margin="0,0,6,0" Command="{Binding Duplication.AddCommand}" />
-                      <Button Content="Protect the whole pool" MinWidth="168"
+                      <Button Content="{Binding Duplication.SaveLabel}" Style="{StaticResource PrimaryButton}"
+                              MinWidth="152" Margin="0,0,6,0" Command="{Binding Duplication.AddCommand}" />
+                      <Button Content="Protect the whole pool" MinWidth="168" Margin="0,0,6,0"
                               Command="{Binding Duplication.ProtectEverythingCommand}"
-                              ToolTip="Every file in the pool, including ones added later." />
+                              ToolTip="Every file in the pool, including ones added later."
+                              Visibility="{Binding Duplication.IsEditing, Converter={StaticResource InverseBoolToVisibility}}" />
+                      <Button Content="Cancel" MinWidth="96"
+                              Command="{Binding Duplication.StopEditingCommand}"
+                              ToolTip="Stop changing this folder and describe a new one instead."
+                              Visibility="{Binding Duplication.IsEditing, Converter={StaticResource BoolToVisibility}}" />
                     </StackPanel>
 
                     <TextBlock Style="{StaticResource Caption}" Margin="0,10,0,0"
@@ -818,6 +835,11 @@
           </TabItem>
         </TabControl>
       </Border>
+
+      <!-- Last, so it draws over both cards and is the thing the mouse finds. -->
+      <GridSplitter Grid.Column="1" Style="{StaticResource PaneSplitter}"
+                    ResizeBehavior="PreviousAndNext" ResizeDirection="Columns"
+                    MouseDoubleClick="OnSplitterDoubleClick" />
     </Grid>
 
     <!-- Status bar -->

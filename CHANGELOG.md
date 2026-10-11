@@ -17,6 +17,27 @@ change:
 Data format: a reserved `.staging` folder is added at the install root — see below. Config schema:
 unchanged.
 
+### Added
+
+- **A protected folder can be changed after it is set up.** Clicking one in the list loads it into
+  the panel below, so changing how many copies it keeps is the same action as setting it up in the
+  first place rather than a separate mode to find; the heading and the button say which of the two
+  they are doing, and **Cancel** goes back to describing a new folder. Previously the only things that
+  could be done to a folder already protected were pausing it and stopping altogether.
+- **The divider between the pools and the panel beside them can be dragged**, and where it is put is
+  remembered for next time. Double-clicking it evens the two up again.
+
+### Changed
+
+- Every text style wraps now, headings included. The panels are resizable, so text that does not wrap
+  is text waiting to be cut off at a width the person is entitled to choose — a long folder name in
+  the protected list was the visible case.
+- Clearer wording through the Protected tab: what a folder path should look like ("as the folder
+  appears inside the pool, not a full Windows path"), what byte-for-byte checking costs, and what the
+  surplus-copies option actually does, which now reads as **"Never delete a copy"** rather than
+  describing the internal rule. Removing a folder's protection says plainly that every copy already
+  on the drives is left where it is.
+
 ### Fixed
 
 - **Closing MergePool could show "MergePool's window hit an unexpected error: The operation was

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Runtime.Versioning;
 using MergePool.Core.Update;
@@ -28,6 +29,58 @@ public static class StartupRegistration
     private const string PreferencesKey = @"Software\MergePool";
 
     private const string SeamlessValueName = "SeamlessRestart";
+
+    private const string PaneRatioValueName = "LeftPaneRatio";
+
+    /// <summary>The default share of the body the pools take, which is also the reset value.</summary>
+    public const double DefaultPaneRatio = 1.25 / 2.25;
+
+    /// <summary>
+    /// How much of the width the pools pane takes, as a fraction. Clamped on the way in and out, so
+    /// a hand-edited or corrupted value cannot leave one panel too narrow to use.
+    /// </summary>
+    public static double PaneRatio()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(PreferencesKey);
+
+            return key?.GetValue(PaneRatioValueName) is string stored
+                   && double.TryParse(stored, NumberStyles.Float, CultureInfo.InvariantCulture, out var ratio)
+                ? Clamp(ratio)
+                : DefaultPaneRatio;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            return DefaultPaneRatio;
+        }
+    }
+
+    public static bool SetPaneRatio(double ratio)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.CreateSubKey(PreferencesKey, writable: true);
+            if (key is null)
+            {
+                return false;
+            }
+
+            key.SetValue(
+                PaneRatioValueName,
+                Clamp(ratio).ToString("0.####", CultureInfo.InvariantCulture),
+                RegistryValueKind.String);
+
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            return false;
+        }
+    }
+
+    private static double Clamp(double ratio) =>
+        double.IsFinite(ratio) ? Math.Clamp(ratio, 0.2, 0.8) : DefaultPaneRatio;
 
     /// <summary>
     /// Whether the window reopens itself on a new version instead of waiting to be asked. On by

@@ -174,6 +174,11 @@ and you will find the same files in both. Nothing needs MergePool to read them.
 - **Keep copies this rule no longer asks for** — off means lowering the number of copies deletes the
   extra ones; on means nothing is ever deleted to satisfy a rule.
 
+**To change a folder later**, click it in the list. Its settings load into the panel below, where
+the heading reads "Change this protected folder" and the button says **Save changes** — asking for
+more copies makes them on the next sweep, asking for fewer removes the spare ones unless you have
+ticked **Never delete a copy**. **Cancel** goes back to describing a new folder.
+
 **Stop protecting** a folder and the copies already on your drives stay exactly where they are.
 Nothing is deleted; new and changed files in it simply stop being copied.
 
