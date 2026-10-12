@@ -239,6 +239,83 @@ public sealed class EngineOverIpcTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task The_advanced_tunables_round_trip()
+    {
+        // These were reachable only by hand-editing the config file before protocol 6. The window
+        // now shows them, so every one of them has to survive the trip to the service and back.
+        await using var client = await ConnectAsync();
+
+        var after = await client.InvokeAsync<PlacementSettingsDto>(
+            Methods.ConfigSetPlacement,
+            new PlacementSettingsDto
+            {
+                WriteHeadroomBytes = 512L * 1024 * 1024,
+                LatencyThrottleRatio = 4.5,
+                ThrottleEnterSamples = 7,
+                ThrottleExitSamples = 9,
+                MinSamplesForThrottleDetection = 11,
+                EwmaAlpha = 0.4,
+                BaselineAlpha = 0.03,
+                BaselineRiseAlpha = 0.5,
+                ReferenceThroughputBytesPerSecond = 250d * 1024 * 1024,
+                MinSpeedFactor = 0.2,
+                MaxSpeedFactor = 12,
+                MinThroughputSampleBytes = 128 * 1024,
+                IdleProbeIntervalSeconds = 300,
+                IdleProbeBytes = 2 * 1024 * 1024,
+                RebalanceTriggerImbalance = 0.25,
+                RebalanceTargetImbalance = 0.08,
+                RebalanceMaxFileBytes = 128L * 1024 * 1024 * 1024,
+                RebalancePauseWhileBusy = false,
+            },
+            CancellationToken.None);
+
+        Assert.Equal(512L * 1024 * 1024, after.WriteHeadroomBytes);
+        Assert.Equal(4.5, after.LatencyThrottleRatio);
+        Assert.Equal(7, after.ThrottleEnterSamples);
+        Assert.Equal(9, after.ThrottleExitSamples);
+        Assert.Equal(11, after.MinSamplesForThrottleDetection);
+        Assert.Equal(0.4, after.EwmaAlpha);
+        Assert.Equal(0.03, after.BaselineAlpha);
+        Assert.Equal(0.5, after.BaselineRiseAlpha);
+        Assert.Equal(250d * 1024 * 1024, after.ReferenceThroughputBytesPerSecond);
+        Assert.Equal(0.2, after.MinSpeedFactor);
+        Assert.Equal(12, after.MaxSpeedFactor);
+        Assert.Equal(128 * 1024, after.MinThroughputSampleBytes);
+        Assert.Equal(300, after.IdleProbeIntervalSeconds);
+        Assert.Equal(2 * 1024 * 1024, after.IdleProbeBytes);
+        Assert.Equal(0.25, after.RebalanceTriggerImbalance);
+        Assert.Equal(0.08, after.RebalanceTargetImbalance);
+        Assert.Equal(128L * 1024 * 1024 * 1024, after.RebalanceMaxFileBytes);
+        Assert.False(after.RebalancePauseWhileBusy);
+    }
+
+    [Fact]
+    public async Task A_tunable_that_would_wedge_the_engine_comes_back_clamped()
+    {
+        await using var client = await ConnectAsync();
+
+        var after = await client.InvokeAsync<PlacementSettingsDto>(
+            Methods.ConfigSetPlacement,
+            new PlacementSettingsDto
+            {
+                // Exit under enter, a ceiling under its floor, and a rebalance that would never
+                // consider itself finished. The service stores none of it as asked.
+                ThrottleEnterRatio = 0.85,
+                ThrottleExitRatio = 0.2,
+                MinSpeedFactor = 0.9,
+                MaxSpeedFactor = 0.2,
+                RebalanceTriggerImbalance = 0.1,
+                RebalanceTargetImbalance = 0.8,
+            },
+            CancellationToken.None);
+
+        Assert.True(after.ThrottleExitRatio > after.ThrottleEnterRatio);
+        Assert.True(after.MaxSpeedFactor > after.MinSpeedFactor);
+        Assert.True(after.RebalanceTargetImbalance < after.RebalanceTriggerImbalance);
+    }
+
+    [Fact]
     public async Task Drain_and_resume_take_the_pools_down_and_bring_them_back()
     {
         var volume = AddDrive("One");
@@ -770,6 +847,53 @@ public sealed class EngineOverIpcTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Pre_releases_are_opt_in_and_stay_opted_in()
+    {
+        await using var client = await ConnectAsync();
+
+        var before = await client.InvokeAsync<UpdateStatusResult>(
+            Methods.UpdateStatus, null, CancellationToken.None);
+
+        Assert.False(before.IncludePrereleases);
+
+        var after = await client.InvokeAsync<UpdateStatusResult>(
+            Methods.UpdateSetOptions,
+            new UpdateSettingsDto { IncludePrereleases = true },
+            CancellationToken.None);
+
+        Assert.True(after.IncludePrereleases);
+        Assert.Equal(before.CheckIntervalHours, after.CheckIntervalHours);
+    }
+
+    [Fact]
+    public async Task How_copying_is_paced_round_trips()
+    {
+        var volume = AddDrive("One");
+        await using var client = await ConnectAsync();
+
+        await client.InvokeAsync<PoolDto>(
+            Methods.PoolCreate,
+            new CreatePoolRequest { Name = "Media", MountPoint = "P:", VolumeIds = [volume.ToVolumePath()] },
+            CancellationToken.None);
+
+        var stored = await client.InvokeAsync<DuplicationResult>(
+            Methods.DuplicationSetOptions,
+            new DuplicationOptionsDto
+            {
+                MaxBytesPerSecond = 64L * 1024 * 1024,
+                ScanIntervalMinutes = 45,
+                CopyHeadroomBytes = 512L * 1024 * 1024,
+                PauseWhileBusy = false,
+            },
+            CancellationToken.None);
+
+        Assert.Equal(64L * 1024 * 1024, stored.MaxBytesPerSecond);
+        Assert.Equal(45, stored.ScanIntervalMinutes);
+        Assert.Equal(512L * 1024 * 1024, stored.CopyHeadroomBytes);
+        Assert.False(stored.PauseWhileBusy);
+    }
+
+    [Fact]
     public async Task Growing_and_shrinking_a_pool_are_announced_as_capabilities()
     {
         await using var client = await ConnectAsync();
@@ -778,5 +902,15 @@ public sealed class EngineOverIpcTests : IAsyncLifetime
         Assert.True(client.Supports(Capabilities.DriveRemoval));
         Assert.True(client.Supports(Capabilities.Usage));
         Assert.True(client.Supports(Capabilities.AutoUpdate));
+    }
+
+    [Fact]
+    public async Task The_expert_tunables_are_announced_as_a_capability()
+    {
+        // The window asks for this rather than for a version number, so an older service simply
+        // shows the everyday settings instead of writing fields it would ignore.
+        await using var client = await ConnectAsync();
+
+        Assert.True(client.Supports(Capabilities.AdvancedSettings));
     }
 }

@@ -12,6 +12,61 @@ change:
 - **Config schema** — `config.json` `schemaVersion`, migrated forward only, backed up first,
   unknown fields preserved.
 
+## [0.9.0] - 2026-10-12
+
+Data format: unchanged. Config schema: unchanged — every setting now in the window was already a
+field in `config.json`, reachable until now only by editing that file by hand. IPC protocol: 6,
+additive (see [docs/UPGRADES.md](docs/UPGRADES.md)).
+
+### Added
+
+- **An Advanced switch in the title bar, and every tunable the engine has behind it.** The settings
+  worth changing day to day — where new files go, how much space to keep clear, whether and how fast
+  to even the drives out — stay in front of everyone. Turning Advanced on adds the rest: the free-space
+  exponent and write headroom, the speed a parked drive has to regain, latency throttling, how many
+  samples it takes to park a drive and to bring it back, the shortest time parked, the speed counted
+  as normal, the three smoothing factors, the speed-factor floor and ceiling, the smallest write that
+  counts, the idle probe's interval and size, the gaps that start and stop a rebalance, the largest
+  file it will move, whether it gives way to real work, how copying is paced, how often protected
+  folders are swept, how much room a copy leaves, how often MergePool looks for a new version, and
+  whether pre-releases count. Thirty settings in all, where there were four. The switch is remembered
+  per user, governs the whole window rather than one tab, changes nothing on its own, and is also
+  Ctrl+Shift+A.
+- **Every button, switch and slider explains itself.** Hovering anything you can act on gives a
+  paragraph rather than a label: what it does, what it affects, and what it does not touch. Unmount
+  says the files stay where they are; Remove pool says nothing is deleted; Rebalance says each copy is
+  verified before the original goes; the drive tick box says it is a selection and not an action; the
+  byte-for-byte option says what it costs. A test now fails if a control is added to the window
+  without that sentence.
+- **Each setting carries its own explanation on screen**, not only in a tooltip: its value in words
+  ("a drive is parked once it writes below 45% of its own normal speed"), what it does, what you gain
+  and give up by moving it, the value MergePool ships with, and — once it is off that value — a
+  **changed** mark and a one-click way back for that setting alone. Each group of settings says how
+  many of its settings are no longer at their defaults.
+- **F5** refreshes the window, the same as the Refresh button.
+
+### Changed
+
+- The Settings tab is rebuilt around that description, with Save and Back to defaults in a footer
+  that cannot be scrolled past, saying whether anything is waiting to be sent. Settings reach the
+  service when you save, so a half-moved slider never does; updates and start-up are separate and
+  still take effect as you set them. A periodic refresh no longer pulls a slider out from under
+  whoever is moving it.
+- The sliders, switches and tooltips are drawn by MergePool rather than by WPF's defaults: a filled
+  track with a round thumb, a real switch for the settings that turn something on, and tooltips that
+  wrap, are themed, and stay on screen long enough to read a paragraph.
+- Settings that have to stay in order now do: a drive always has to regain more speed than the amount
+  that parked it, and a rebalance always stops at a smaller gap than the one that starts it. Moving
+  the first slider pushes the second along in front of you rather than it jumping on save.
+
+### Fixed
+
+- **A hand-edited `config.json` can no longer wedge the engine.** Every tunable is clamped into a
+  range that still works when it is stored — a zero duplication scan interval, a zero rebalance rate,
+  a speed-factor ceiling under its floor, an exit ratio under its enter ratio, a non-finite weight —
+  and what the window shows after a save is what the service actually stored, so it never claims a
+  value the engine is not using. Reasonable hand-edited values are left exactly as they are.
+
 ## [0.8.0] - 2026-10-10
 
 Data format: a reserved `.staging` folder is added at the install root — see below. Config schema:

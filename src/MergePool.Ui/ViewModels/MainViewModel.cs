@@ -29,6 +29,7 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
     private bool _isConnected;
     private PoolViewModel? _selectedPool;
     private PoolPartViewModel? _selectedPart;
+    private bool _showAdvanced;
 
     public MainViewModel(ServiceConnection? service = null)
     {
@@ -50,9 +51,55 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
         EvacuateDriveCommand = new AsyncCommand(() => RemoveDriveAsync(moveFilesOff: true), () => CanRemoveDrive);
         OpenPoolCommand = new AsyncCommand(OpenSelectedPoolAsync, () => SelectedPool is { IsMounted: true });
 
+        ToggleAdvancedCommand = new RelayCommand(() => ShowAdvanced = !ShowAdvanced);
+
         _timer = new DispatcherTimer { Interval = RefreshInterval };
         _timer.Tick += OnTick;
+
+        // Remembered per user: someone who went looking for the expert settings once should find
+        // them where they left them.
+        ShowAdvanced = StartupRegistration.ShowAdvanced();
     }
+
+    /// <summary>
+    /// Whether the window is showing the expert tunables — the exponents, sample counts, smoothing
+    /// factors and probe sizes that are only worth touching with a problem in mind.
+    /// </summary>
+    /// <remarks>
+    /// One switch for the whole window rather than a reveal on each tab: Advanced is a statement
+    /// about how much you want to be shown, not a per-screen preference. It changes nothing about
+    /// what MergePool is doing — it only decides what is on screen.
+    /// </remarks>
+    public bool ShowAdvanced
+    {
+        get => _showAdvanced;
+        set
+        {
+            if (!Set(ref _showAdvanced, value))
+            {
+                return;
+            }
+
+            Settings.ShowAdvanced = value;
+            Updates.ShowAdvanced = value;
+            Duplication.ShowAdvanced = value;
+
+            StartupRegistration.SetShowAdvanced(value);
+
+            Raise(nameof(AdvancedHint));
+        }
+    }
+
+    public RelayCommand ToggleAdvancedCommand { get; }
+
+    /// <summary>What the Advanced toggle is offering, said differently depending on its state.</summary>
+    public string AdvancedHint => _showAdvanced
+        ? "Advanced is on: every tunable the engine has is on screen, each with what it does and "
+          + "what it ships with. Turn it off to go back to the handful that matter day to day. "
+          + "Ctrl+Shift+A does the same thing."
+        : "Advanced is off. Turn it on to see every tunable the engine has — placement scoring, "
+          + "slow-drive detection, how drives are measured, rebalance thresholds and copy pacing. "
+          + "Showing them changes nothing on its own. Ctrl+Shift+A does the same thing.";
 
     public ObservableCollection<DriveViewModel> Drives { get; } = [];
 

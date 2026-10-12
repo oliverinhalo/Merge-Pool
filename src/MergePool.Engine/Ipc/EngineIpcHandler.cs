@@ -400,6 +400,7 @@ public sealed class EngineIpcHandler(
                 AutomaticChecks = options.AutomaticChecks,
                 AutomaticInstall = options.AutomaticInstall,
                 CheckIntervalHours = options.CheckIntervalHours,
+                IncludePrereleases = options.IncludePrereleases,
             };
         }
 
@@ -420,6 +421,7 @@ public sealed class EngineIpcHandler(
             AutomaticChecks = options.AutomaticChecks,
             AutomaticInstall = options.AutomaticInstall,
             CheckIntervalHours = options.CheckIntervalHours,
+            IncludePrereleases = options.IncludePrereleases,
             InstalledVersions = [.. state.InstalledVersions],
         };
     }
@@ -549,6 +551,8 @@ public sealed class EngineIpcHandler(
             Enabled = settings.Enabled,
             MaxBytesPerSecond = settings.MaxBytesPerSecond,
             ScanIntervalMinutes = settings.ScanIntervalMinutes,
+            CopyHeadroomBytes = settings.CopyHeadroomBytes,
+            PauseWhileBusy = settings.PauseWhileBusy,
             Rules = rules,
             CopiesToAdd = plan.CopiesToAdd,
             CopiesToRefresh = plan.CopiesToRefresh,
@@ -642,6 +646,9 @@ public sealed class EngineIpcHandler(
             settings.Enabled = request.Enabled ?? settings.Enabled;
             settings.MaxBytesPerSecond = request.MaxBytesPerSecond ?? settings.MaxBytesPerSecond;
             settings.ScanIntervalMinutes = request.ScanIntervalMinutes ?? settings.ScanIntervalMinutes;
+            settings.CopyHeadroomBytes = request.CopyHeadroomBytes ?? settings.CopyHeadroomBytes;
+            settings.PauseWhileBusy = request.PauseWhileBusy ?? settings.PauseWhileBusy;
+            settings.Clamped();
         });
 
         return Ok(call.Request.Id, new DuplicationResult
@@ -649,6 +656,8 @@ public sealed class EngineIpcHandler(
             Enabled = _engine.Config.Duplication.Enabled,
             MaxBytesPerSecond = _engine.Config.Duplication.MaxBytesPerSecond,
             ScanIntervalMinutes = _engine.Config.Duplication.ScanIntervalMinutes,
+            CopyHeadroomBytes = _engine.Config.Duplication.CopyHeadroomBytes,
+            PauseWhileBusy = _engine.Config.Duplication.PauseWhileBusy,
         });
     }
 
@@ -686,6 +695,8 @@ public sealed class EngineIpcHandler(
             options.AutomaticChecks = request.AutomaticChecks ?? options.AutomaticChecks;
             options.AutomaticInstall = request.AutomaticInstall ?? options.AutomaticInstall;
             options.CheckIntervalHours = request.CheckIntervalHours ?? options.CheckIntervalHours;
+            options.IncludePrereleases = request.IncludePrereleases ?? options.IncludePrereleases;
+            options.Clamped();
         });
 
         return Ok(call.Request.Id, UpdateStatus());
@@ -816,6 +827,26 @@ public sealed class EngineIpcHandler(
             ThrottleCooldownSeconds = placement.ThrottleCooldownSeconds,
             RebalanceEnabled = placement.Rebalance.Enabled,
             RebalanceMaxBytesPerSecond = placement.Rebalance.MaxBytesPerSecond,
+
+            // Protocol 6: the expert tunables. An older UI ignores what it does not know about.
+            WriteHeadroomBytes = placement.WriteHeadroomBytes,
+            LatencyThrottleRatio = placement.LatencyThrottleRatio,
+            ThrottleEnterSamples = placement.ThrottleEnterSamples,
+            ThrottleExitSamples = placement.ThrottleExitSamples,
+            MinSamplesForThrottleDetection = placement.MinSamplesForThrottleDetection,
+            EwmaAlpha = placement.EwmaAlpha,
+            BaselineAlpha = placement.BaselineAlpha,
+            BaselineRiseAlpha = placement.BaselineRiseAlpha,
+            ReferenceThroughputBytesPerSecond = placement.ReferenceThroughputBytesPerSecond,
+            MinSpeedFactor = placement.MinSpeedFactor,
+            MaxSpeedFactor = placement.MaxSpeedFactor,
+            MinThroughputSampleBytes = placement.MinThroughputSampleBytes,
+            IdleProbeIntervalSeconds = placement.IdleProbeIntervalSeconds,
+            IdleProbeBytes = placement.IdleProbeBytes,
+            RebalanceTriggerImbalance = placement.Rebalance.TriggerImbalance,
+            RebalanceTargetImbalance = placement.Rebalance.TargetImbalance,
+            RebalanceMaxFileBytes = placement.Rebalance.MaxFileBytes,
+            RebalancePauseWhileBusy = placement.Rebalance.PauseWhileBusy,
         };
     }
 
@@ -836,6 +867,37 @@ public sealed class EngineIpcHandler(
             placement.Rebalance.Enabled = request.RebalanceEnabled ?? placement.Rebalance.Enabled;
             placement.Rebalance.MaxBytesPerSecond =
                 request.RebalanceMaxBytesPerSecond ?? placement.Rebalance.MaxBytesPerSecond;
+
+            placement.WriteHeadroomBytes = request.WriteHeadroomBytes ?? placement.WriteHeadroomBytes;
+            placement.LatencyThrottleRatio = request.LatencyThrottleRatio ?? placement.LatencyThrottleRatio;
+            placement.ThrottleEnterSamples = request.ThrottleEnterSamples ?? placement.ThrottleEnterSamples;
+            placement.ThrottleExitSamples = request.ThrottleExitSamples ?? placement.ThrottleExitSamples;
+            placement.MinSamplesForThrottleDetection =
+                request.MinSamplesForThrottleDetection ?? placement.MinSamplesForThrottleDetection;
+            placement.EwmaAlpha = request.EwmaAlpha ?? placement.EwmaAlpha;
+            placement.BaselineAlpha = request.BaselineAlpha ?? placement.BaselineAlpha;
+            placement.BaselineRiseAlpha = request.BaselineRiseAlpha ?? placement.BaselineRiseAlpha;
+            placement.ReferenceThroughputBytesPerSecond =
+                request.ReferenceThroughputBytesPerSecond ?? placement.ReferenceThroughputBytesPerSecond;
+            placement.MinSpeedFactor = request.MinSpeedFactor ?? placement.MinSpeedFactor;
+            placement.MaxSpeedFactor = request.MaxSpeedFactor ?? placement.MaxSpeedFactor;
+            placement.MinThroughputSampleBytes =
+                request.MinThroughputSampleBytes ?? placement.MinThroughputSampleBytes;
+            placement.IdleProbeIntervalSeconds =
+                request.IdleProbeIntervalSeconds ?? placement.IdleProbeIntervalSeconds;
+            placement.IdleProbeBytes = request.IdleProbeBytes ?? placement.IdleProbeBytes;
+            placement.Rebalance.TriggerImbalance =
+                request.RebalanceTriggerImbalance ?? placement.Rebalance.TriggerImbalance;
+            placement.Rebalance.TargetImbalance =
+                request.RebalanceTargetImbalance ?? placement.Rebalance.TargetImbalance;
+            placement.Rebalance.MaxFileBytes = request.RebalanceMaxFileBytes ?? placement.Rebalance.MaxFileBytes;
+            placement.Rebalance.PauseWhileBusy =
+                request.RebalancePauseWhileBusy ?? placement.Rebalance.PauseWhileBusy;
+
+            // A value the window could not have produced — a hand-edited config, or a build from
+            // before a limit existed — is brought into range here rather than defended against on
+            // every placement decision. What the window reads back is what the engine is using.
+            placement.Clamped();
         });
 
         return Ok(call.Request.Id, PlacementSettings());

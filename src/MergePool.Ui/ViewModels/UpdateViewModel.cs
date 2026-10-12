@@ -4,6 +4,7 @@ using System.Reflection;
 using MergePool.Core.Update;
 using MergePool.Ipc.Protocol;
 using MergePool.Ui.Services;
+using MergePool.Ui.ViewModels.Settings;
 
 namespace MergePool.Ui.ViewModels;
 
@@ -20,11 +21,15 @@ public sealed class UpdateViewModel : ViewModelBase
     private string? _message;
     private bool _busy;
     private bool _announcedStale;
+    private bool _showAdvanced;
 
     public UpdateViewModel(ServiceConnection service, Func<CancellationToken> token)
     {
         _service = service ?? throw new ArgumentNullException(nameof(service));
         _token = token ?? throw new ArgumentNullException(nameof(token));
+
+        Advanced = BuildAdvanced();
+        Advanced.ApplyAdvanced(advanced: false);
 
         CheckCommand = new AsyncCommand(CheckAsync, () => !_busy && IsSupported);
         InstallCommand = new AsyncCommand(InstallAsync, () => !_busy && UpdateAvailable);
@@ -32,6 +37,26 @@ public sealed class UpdateViewModel : ViewModelBase
     }
 
     public AsyncCommand CheckCommand { get; }
+
+    /// <summary>
+    /// How updating behaves, beyond the two checkboxes: how often the release feed is looked at,
+    /// and whether pre-releases count. Shown only when Advanced is on, because the defaults are
+    /// what a machine that is being relied on should be running.
+    /// </summary>
+    public SettingGroup Advanced { get; }
+
+    /// <summary>Set from the window's Advanced toggle.</summary>
+    public bool ShowAdvanced
+    {
+        get => _showAdvanced;
+        set
+        {
+            if (Set(ref _showAdvanced, value))
+            {
+                Advanced.ApplyAdvanced(value);
+            }
+        }
+    }
 
     public AsyncCommand InstallCommand { get; }
 
@@ -209,6 +234,13 @@ public sealed class UpdateViewModel : ViewModelBase
         Raise(nameof(WindowIsStale));
         Raise(nameof(StaleHeadline));
 
+        if (status is not null)
+        {
+            _checkInterval.Load(status.CheckIntervalHours);
+            _prereleases.Load(status.IncludePrereleases);
+            Advanced.Refresh();
+        }
+
         CheckCommand.RaiseCanExecuteChanged();
         InstallCommand.RaiseCanExecuteChanged();
         RestartWindowCommand.RaiseCanExecuteChanged();
@@ -314,6 +346,51 @@ public sealed class UpdateViewModel : ViewModelBase
             CheckCommand.RaiseCanExecuteChanged();
             InstallCommand.RaiseCanExecuteChanged();
         }
+    }
+
+    private NumericSetting _checkInterval = null!;
+
+    private ToggleSetting _prereleases = null!;
+
+    private SettingGroup BuildAdvanced()
+    {
+        _checkInterval = new NumericSetting(
+            "How often it looks for a new version",
+            "How long MergePool waits between checks of the release feed. A check is one small "
+            + "request; it downloads nothing unless there is a newer version and you have asked for "
+            + "it to be installed.",
+            "More often means you get a fix sooner. Less often means next to no network traffic — "
+            + "and you can always click Check now, whatever this says.",
+            minimum: 1,
+            maximum: 336,
+            step: 1,
+            defaultValue: 6,
+            SettingFormats.Hours,
+            value => string.Create(
+                CultureInfo.CurrentCulture,
+                $"The release feed is checked every {SettingFormats.Hours(value)}."),
+            value => _ = ApplySettingAsync(new UpdateSettingsDto { CheckIntervalHours = value }),
+            advanced: true);
+
+        _prereleases = new ToggleSetting(
+            "Offer pre-release versions",
+            "Whether a version marked as a pre-release counts as an update. These are builds put "
+            + "out for testing before a release is called finished.",
+            "On, you see fixes and new work first, and you are the one finding out what is wrong "
+            + "with them. Off, MergePool only ever moves to a finished release — which is what a "
+            + "machine holding data you care about should be doing.",
+            defaultValue: false,
+            "On: pre-releases are installed like any other version.",
+            "Off: only finished releases are offered.",
+            value => _ = ApplySettingAsync(new UpdateSettingsDto { IncludePrereleases = value }),
+            advanced: true);
+
+        return new SettingGroup(
+            "Updating",
+            "How MergePool looks for new versions of itself.",
+            advanced: true,
+            _checkInterval,
+            _prereleases);
     }
 
     private async Task ApplySettingAsync(UpdateSettingsDto settings)

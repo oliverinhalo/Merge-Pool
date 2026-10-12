@@ -56,6 +56,25 @@ public sealed class ReleaseFeedTests
         new(new HttpClient(StubHandler.Json(body)), options);
 
     [Fact]
+    public async Task Turning_pre_releases_on_takes_effect_at_the_next_check()
+    {
+        // The setting is in the window now, so it is read on every check rather than captured when
+        // the service starts: a toggle that needs a service restart is a toggle that lies.
+        var options = new ReleaseFeedOptions { IncludePrereleases = false };
+        var feed = new GitHubReleaseFeed(
+            new HttpClient(StubHandler.Json($"[{Release("v0.4.0", prerelease: true)},{Release("v0.3.0")}]")),
+            () => options);
+
+        var stable = await feed.GetLatestAsync(CancellationToken.None);
+        Assert.Equal("0.3.0", stable?.Version);
+
+        options = new ReleaseFeedOptions { IncludePrereleases = true };
+
+        var preview = await feed.GetLatestAsync(CancellationToken.None);
+        Assert.Equal("0.4.0", preview?.Version);
+    }
+
+    [Fact]
     public async Task The_newest_release_with_a_package_is_returned()
     {
         var feed = Feed($"[{Release("v0.2.0")},{Release("v0.4.0")},{Release("v0.3.0")}]");
