@@ -366,6 +366,10 @@ public sealed class UpdateStatusResult : IpcContract
     [JsonPropertyName("checkIntervalHours")]
     public double CheckIntervalHours { get; set; }
 
+    /// <summary>Whether pre-releases are offered as well as stable versions. Protocol 6.</summary>
+    [JsonPropertyName("includePrereleases")]
+    public bool IncludePrereleases { get; set; }
+
     /// <summary>Versions on disk. An upgrade only repoints which one is active.</summary>
     [JsonPropertyName("installedVersions")]
     public List<string> InstalledVersions { get; set; } = [];
@@ -382,6 +386,10 @@ public sealed class UpdateSettingsDto : IpcContract
 
     [JsonPropertyName("checkIntervalHours")]
     public double? CheckIntervalHours { get; set; }
+
+    /// <summary>Offer pre-release versions as well as stable ones. Protocol 6.</summary>
+    [JsonPropertyName("includePrereleases")]
+    public bool? IncludePrereleases { get; set; }
 }
 
 /// <summary>The web interface's settings and what it is actually doing. Protocol 4.</summary>
@@ -594,6 +602,83 @@ public sealed class PlacementSettingsDto : IpcContract
 
     [JsonPropertyName("rebalanceMaxBytesPerSecond")]
     public long? RebalanceMaxBytesPerSecond { get; set; }
+
+    // ----- Protocol 6: the tunables behind the Advanced toggle. -----
+    // Every one of these was already in the config file and reachable only by hand-editing it. They
+    // are nullable like the rest, so a build that does not know about one leaves it alone, and the
+    // service clamps each to a range that cannot wedge the engine before storing it.
+
+    /// <summary>Free space left over beyond the file's own size when a drive is chosen for it.</summary>
+    [JsonPropertyName("writeHeadroomBytes")]
+    public long? WriteHeadroomBytes { get; set; }
+
+    /// <summary>Write latency above this multiple of a drive's own normal latency also parks it.</summary>
+    [JsonPropertyName("latencyThrottleRatio")]
+    public double? LatencyThrottleRatio { get; set; }
+
+    /// <summary>Bad samples in a row before a drive is parked.</summary>
+    [JsonPropertyName("throttleEnterSamples")]
+    public int? ThrottleEnterSamples { get; set; }
+
+    /// <summary>Good samples in a row before a parked drive is used again.</summary>
+    [JsonPropertyName("throttleExitSamples")]
+    public int? ThrottleExitSamples { get; set; }
+
+    /// <summary>Samples a drive must have before it can be called slow at all.</summary>
+    [JsonPropertyName("minSamplesForThrottleDetection")]
+    public int? MinSamplesForThrottleDetection { get; set; }
+
+    /// <summary>How quickly the current-speed figure follows the newest sample.</summary>
+    [JsonPropertyName("ewmaAlpha")]
+    public double? EwmaAlpha { get; set; }
+
+    /// <summary>How quickly a drive's "normal speed" baseline drifts downwards.</summary>
+    [JsonPropertyName("baselineAlpha")]
+    public double? BaselineAlpha { get; set; }
+
+    /// <summary>How quickly that baseline follows a sample better than itself.</summary>
+    [JsonPropertyName("baselineRiseAlpha")]
+    public double? BaselineRiseAlpha { get; set; }
+
+    /// <summary>The throughput counted as a speed factor of 1.0.</summary>
+    [JsonPropertyName("referenceThroughputBytesPerSecond")]
+    public double? ReferenceThroughputBytesPerSecond { get; set; }
+
+    /// <summary>Floor on a measured speed factor, so one bad patch cannot exile a drive.</summary>
+    [JsonPropertyName("minSpeedFactor")]
+    public double? MinSpeedFactor { get; set; }
+
+    /// <summary>Ceiling on a measured speed factor, so one fast burst cannot monopolise a drive.</summary>
+    [JsonPropertyName("maxSpeedFactor")]
+    public double? MaxSpeedFactor { get; set; }
+
+    /// <summary>Writes smaller than this say nothing about throughput and only feed latency.</summary>
+    [JsonPropertyName("minThroughputSampleBytes")]
+    public long? MinThroughputSampleBytes { get; set; }
+
+    /// <summary>How long a drive may sit idle before it is measured with a small probe write.</summary>
+    [JsonPropertyName("idleProbeIntervalSeconds")]
+    public double? IdleProbeIntervalSeconds { get; set; }
+
+    /// <summary>The size of that probe write.</summary>
+    [JsonPropertyName("idleProbeBytes")]
+    public int? IdleProbeBytes { get; set; }
+
+    /// <summary>Rebalancing starts once the fullest and emptiest drive differ by more than this.</summary>
+    [JsonPropertyName("rebalanceTriggerImbalance")]
+    public double? RebalanceTriggerImbalance { get; set; }
+
+    /// <summary>Rebalancing stops once the gap is back under this.</summary>
+    [JsonPropertyName("rebalanceTargetImbalance")]
+    public double? RebalanceTargetImbalance { get; set; }
+
+    /// <summary>The largest single file the rebalancer will move.</summary>
+    [JsonPropertyName("rebalanceMaxFileBytes")]
+    public long? RebalanceMaxFileBytes { get; set; }
+
+    /// <summary>Hold rebalancing off while the pool is busy, and carry on when it goes quiet.</summary>
+    [JsonPropertyName("rebalancePauseWhileBusy")]
+    public bool? RebalancePauseWhileBusy { get; set; }
 }
 
 /// <summary>One protected folder as the wire describes it. Protocol 5.</summary>
@@ -677,6 +762,14 @@ public sealed class DuplicationResult : IpcContract
     [JsonPropertyName("scanIntervalMinutes")]
     public double ScanIntervalMinutes { get; set; }
 
+    /// <summary>Free space left on a drive after a copy has landed on it. Protocol 6.</summary>
+    [JsonPropertyName("copyHeadroomBytes")]
+    public long CopyHeadroomBytes { get; set; }
+
+    /// <summary>Whether copying gives way to real IO. Protocol 6.</summary>
+    [JsonPropertyName("pauseWhileBusy")]
+    public bool PauseWhileBusy { get; set; } = true;
+
     [JsonPropertyName("rules")]
     public List<DuplicationRuleDto> Rules { get; set; } = [];
 
@@ -705,6 +798,14 @@ public sealed class DuplicationOptionsDto : IpcContract
 
     [JsonPropertyName("scanIntervalMinutes")]
     public double? ScanIntervalMinutes { get; set; }
+
+    /// <summary>Free space left on a drive after a copy has landed on it. Protocol 6.</summary>
+    [JsonPropertyName("copyHeadroomBytes")]
+    public long? CopyHeadroomBytes { get; set; }
+
+    /// <summary>Hold copying off while the pool is busy, and carry on when it goes quiet. Protocol 6.</summary>
+    [JsonPropertyName("pauseWhileBusy")]
+    public bool? PauseWhileBusy { get; set; }
 }
 
 /// <summary>What one duplication pass did. Protocol 5.</summary>

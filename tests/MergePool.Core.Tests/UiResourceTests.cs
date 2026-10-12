@@ -80,6 +80,45 @@ public sealed class UiResourceTests
         }
     }
 
+    [Fact]
+    public void Every_control_you_can_act_on_explains_itself()
+    {
+        // The window's promise is that nothing in it is a mystery: every button, switch, tick box
+        // and slider says what it does when you hover it. A new control without that sentence is
+        // the easiest thing in the world to add and the hardest to notice afterwards.
+        var document = XDocument.Load(Path.Combine(UiRoot(), "Views", "MainWindow.xaml"));
+
+        string[] interactive = ["Button", "CheckBox", "ToggleButton", "Slider"];
+
+        var unexplained = document
+            .Descendants()
+            .Where(element => interactive.Contains(element.Name.LocalName, StringComparer.Ordinal))
+            .Where(element => !Explains(element))
+            .Select(Describe)
+            .ToArray();
+
+        Assert.True(
+            unexplained.Length == 0,
+            "These controls have no ToolTip explaining them: " + string.Join("; ", unexplained));
+    }
+
+    /// <summary>
+    /// Whether a control carries a tooltip — written as an attribute, as a property element, or
+    /// inherited from the style it is based on (the splitter's explanation lives in its style).
+    /// </summary>
+    private static bool Explains(XElement element) =>
+        element.Attribute("ToolTip") is not null
+        || element.Elements().Any(child => child.Name.LocalName == element.Name.LocalName + ".ToolTip");
+
+    private static string Describe(XElement element)
+    {
+        var content = element.Attribute("Content")?.Value;
+        var command = element.Attribute("Command")?.Value;
+        var binding = element.Attribute("IsChecked")?.Value ?? element.Attribute("Value")?.Value;
+
+        return $"<{element.Name.LocalName} {content ?? command ?? binding ?? "?"}>";
+    }
+
     private static HashSet<string> Declared(string relativePath) =>
         Matches(relativePath, KeyDeclaration);
 

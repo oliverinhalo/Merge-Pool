@@ -502,4 +502,267 @@
     <Setter Property="MaxWidth" Value="360" />
   </Style>
 
+  <!-- ===== Tooltips ===== -->
+
+  <!--
+    Every tooltip in the window is a paragraph, not a word, so the default single-line chrome is no
+    use: it wraps, it is given room, and it is styled like the cards it explains. The window sets
+    ToolTipService.ShowDuration high enough to actually read one.
+  -->
+  <Style TargetType="ToolTip">
+    <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="MaxWidth" Value="380" />
+    <Setter Property="HasDropShadow" Value="True" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ToolTip">
+          <Border Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}"
+                  CornerRadius="{StaticResource ControlRadius}"
+                  Padding="12,9">
+            <ContentPresenter />
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Tooltip text is prose: it wraps rather than running off the edge of the screen. -->
+  <Style TargetType="TextBlock" x:Key="ToolTipText">
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="MaxWidth" Value="356" />
+    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+  </Style>
+
+  <!-- ===== Switches ===== -->
+
+  <!--
+    A switch rather than a tick box for the settings that turn something on: a setting that changes
+    what MergePool is doing reads better as a state than as a checked item in a list.
+  -->
+  <Style x:Key="SettingSwitch" TargetType="ToggleButton">
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="Focusable" Value="True" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ToggleButton">
+          <StackPanel Orientation="Horizontal" Background="Transparent">
+            <Border x:Name="Track" Width="40" Height="22" CornerRadius="{StaticResource PillRadius}"
+                    Background="{DynamicResource TrackBrush}"
+                    BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1"
+                    VerticalAlignment="Center">
+              <Border x:Name="Knob" Width="16" Height="16" CornerRadius="{StaticResource PillRadius}"
+                      HorizontalAlignment="Left" Margin="2,0,0,0"
+                      Background="{DynamicResource SurfaceBrush}"
+                      BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1" />
+            </Border>
+            <ContentPresenter x:Name="Label" VerticalAlignment="Center" Margin="10,0,0,0" />
+          </StackPanel>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsChecked" Value="True">
+              <Setter TargetName="Track" Property="Background" Value="{DynamicResource AccentBrush}" />
+              <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+              <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right" />
+              <Setter TargetName="Knob" Property="Margin" Value="0,0,2,0" />
+              <Setter TargetName="Knob" Property="Background" Value="White" />
+              <Setter TargetName="Knob" Property="BorderBrush" Value="White" />
+            </Trigger>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value="0.4" />
+              <Setter Property="Cursor" Value="Arrow" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- The window's own Advanced switch: the same control, carried in a pill so it reads as a
+       control on the title row rather than a stray setting. -->
+  <Style x:Key="HeaderSwitch" TargetType="ToggleButton" BasedOn="{StaticResource SettingSwitch}">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ToggleButton">
+          <Border x:Name="Pill" CornerRadius="{StaticResource PillRadius}" Padding="10,5"
+                  Background="{DynamicResource InsetBrush}"
+                  BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+            <StackPanel Orientation="Horizontal">
+              <ContentPresenter x:Name="Label" VerticalAlignment="Center" Margin="0,0,9,0" />
+              <Border x:Name="Track" Width="34" Height="18" CornerRadius="{StaticResource PillRadius}"
+                      Background="{DynamicResource TrackBrush}"
+                      BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1"
+                      VerticalAlignment="Center">
+                <Border x:Name="Knob" Width="12" Height="12" CornerRadius="{StaticResource PillRadius}"
+                        HorizontalAlignment="Left" Margin="2,0,0,0"
+                        Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1" />
+              </Border>
+            </StackPanel>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsChecked" Value="True">
+              <Setter TargetName="Pill" Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+              <Setter TargetName="Pill" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+              <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+              <Setter TargetName="Track" Property="Background" Value="{DynamicResource AccentBrush}" />
+              <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+              <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right" />
+              <Setter TargetName="Knob" Property="Margin" Value="0,0,2,0" />
+              <Setter TargetName="Knob" Property="Background" Value="White" />
+              <Setter TargetName="Knob" Property="BorderBrush" Value="White" />
+            </Trigger>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Pill" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="Pill" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- ===== Settings ===== -->
+
+  <!-- One setting: its name and value on top, the control under it, then what it does. -->
+  <Style x:Key="SettingCard" TargetType="Border">
+    <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource ControlRadius}" />
+    <Setter Property="Padding" Value="14,12" />
+    <Setter Property="Margin" Value="0,0,0,10" />
+  </Style>
+
+  <!-- The value a slider is at, beside its name, where the eye is already looking. -->
+  <Style x:Key="ValuePill" TargetType="Border">
+    <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+    <Setter Property="CornerRadius" Value="{StaticResource PillRadius}" />
+    <Setter Property="Padding" Value="9,2" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <Style x:Key="ValueText" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+  </Style>
+
+  <!-- Marks a setting that is no longer at the value MergePool ships with. -->
+  <Style x:Key="ChangedPill" TargetType="Border">
+    <Setter Property="Background" Value="{DynamicResource WarningSoftBrush}" />
+    <Setter Property="CornerRadius" Value="{StaticResource PillRadius}" />
+    <Setter Property="Padding" Value="8,2" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Margin" Value="8,0,0,0" />
+  </Style>
+
+  <Style x:Key="ChangedText" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
+  </Style>
+
+  <!--
+    The slider the settings are made of. WPF's default is a thin line with a lozenge on it and no
+    theme awareness at all; this one is a filled track with a round thumb, drawn in the accent
+    colour, which is the only part of the settings screen that shows a value by position.
+  -->
+  <Style x:Key="SettingSlider" TargetType="Slider">
+    <Setter Property="Height" Value="26" />
+    <Setter Property="IsSnapToTickEnabled" Value="True" />
+    <Setter Property="IsMoveToPointEnabled" Value="True" />
+    <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+    <Setter Property="Background" Value="{DynamicResource TrackBrush}" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Slider">
+          <Grid Background="Transparent">
+            <Border Height="5" CornerRadius="{StaticResource PillRadius}"
+                    Background="{TemplateBinding Background}" VerticalAlignment="Center" />
+
+            <Track x:Name="PART_Track">
+              <Track.DecreaseRepeatButton>
+                <!-- The filled part of the track: the same bar, drawn in the accent colour. -->
+                <RepeatButton Command="Slider.DecreaseLarge" Focusable="False" OverridesDefaultStyle="True">
+                  <RepeatButton.Template>
+                    <ControlTemplate TargetType="RepeatButton">
+                      <Border Height="5" CornerRadius="{StaticResource PillRadius}"
+                              Background="{DynamicResource AccentBrush}" VerticalAlignment="Center" />
+                    </ControlTemplate>
+                  </RepeatButton.Template>
+                </RepeatButton>
+              </Track.DecreaseRepeatButton>
+
+              <Track.IncreaseRepeatButton>
+                <RepeatButton Command="Slider.IncreaseLarge" Focusable="False" OverridesDefaultStyle="True">
+                  <RepeatButton.Template>
+                    <ControlTemplate TargetType="RepeatButton">
+                      <Border Background="Transparent" />
+                    </ControlTemplate>
+                  </RepeatButton.Template>
+                </RepeatButton>
+              </Track.IncreaseRepeatButton>
+
+              <Track.Thumb>
+                <Thumb x:Name="Thumb" OverridesDefaultStyle="True" Width="18" Height="18"
+                       Cursor="Hand" Focusable="False">
+                  <Thumb.Template>
+                    <ControlTemplate TargetType="Thumb">
+                      <Grid>
+                        <Ellipse x:Name="Halo" Width="26" Height="26" Opacity="0"
+                                 Fill="{DynamicResource AccentBrush}" />
+                        <Ellipse x:Name="Face" Width="18" Height="18"
+                                 Fill="{DynamicResource SurfaceBrush}"
+                                 Stroke="{DynamicResource AccentBrush}" StrokeThickness="2" />
+                      </Grid>
+                      <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                          <Setter TargetName="Halo" Property="Opacity" Value="0.16" />
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                          <Setter TargetName="Halo" Property="Opacity" Value="0.26" />
+                          <Setter TargetName="Face" Property="Fill" Value="{DynamicResource AccentBrush}" />
+                        </Trigger>
+                      </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                  </Thumb.Template>
+                </Thumb>
+              </Track.Thumb>
+            </Track>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value="0.45" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- "Reset" beside a setting: present, but never competing with the setting itself. -->
+  <Style x:Key="QuietButton" TargetType="Button" BasedOn="{StaticResource LinkButton}">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Padding" Value="4,2" />
+    <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}" />
+  </Style>
+
 </ResourceDictionary>

@@ -17,7 +17,7 @@ namespace MergePool.Ipc.Protocol;
 /// </remarks>
 public static class ProtocolVersion
 {
-    public const int Current = 5;
+    public const int Current = 6;
 
     public const int MinimumSupported = 1;
 
@@ -51,6 +51,12 @@ public static class Capabilities
     public const string WebInterface = "webInterface";
     /// <summary>Folders kept on more than one drive, so losing a drive does not lose them (protocol 5).</summary>
     public const string Duplication = "duplication";
+    /// <summary>
+    /// The expert tunables — placement scoring, slow-drive detection, how drives are measured,
+    /// rebalance thresholds, duplication and update pacing — readable and writable over IPC rather
+    /// than only by hand-editing the config file (protocol 6).
+    /// </summary>
+    public const string AdvancedSettings = "advancedSettings";
     public const string Config = "config";
     public const string Upgrade = "upgrade";
 
@@ -66,6 +72,7 @@ public static class Capabilities
         AutoUpdate,
         WebInterface,
         Duplication,
+        AdvancedSettings,
         Config,
         Upgrade,
     ];

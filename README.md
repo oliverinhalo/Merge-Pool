@@ -57,6 +57,13 @@ Full detail, including what to expect and what to do when something goes wrong, 
   drive that is overheating — until they recover.
 - **Evens itself out in the background.** A low-priority, pausable rebalancer moves files off the
   fullest drives, skipping anything in use and capping its own bandwidth.
+- **Explains itself, and hides nothing.** Every button, switch and slider in the window says what it
+  does, what moving it costs, and the value it ships with; the ones you have changed are marked, and
+  each has its own way back. An **Advanced** switch in the title bar reveals every tunable the engine
+  has — placement scoring, slow-drive detection, how drives are measured, rebalance thresholds, copy
+  pacing — rather than leaving them reachable only by hand-editing `config.json`. A value that would
+  stop the engine working is brought into range by the service and shown as stored, so the window
+  never claims a setting it is not using.
 
 ## Updates never break a running setup
 
@@ -85,16 +92,16 @@ See [docs/UPGRADES.md](docs/UPGRADES.md).
 | `src/MergePool.Ui` | WPF front end | Windows |
 | `src/MergePool.Updater` | Upgrade CLI | Windows |
 | `src/MergePool.Web` | Optional web interface: HTTP server, JSON API, single-page app | any OS |
-| `tests/` | 323 tests, all runnable on any OS | any OS |
+| `tests/` | 391 tests, all runnable on any OS | any OS |
 | `installer/` | Inno Setup script and the publish + package script | Windows |
 
 ## Status
 
-Version 0.4.1. All six milestones are in — core pool library, WinFsp mount, placement and throttle
+Version 0.9.0. All six milestones are in — core pool library, WinFsp mount, placement and throttle
 engine, service and IPC, WPF UI, installer and updater — plus growing and shrinking a live pool,
 measured pool usage, and updating itself from the release feed.
 
-323 tests pass on Linux and Windows. CI compiles the full Windows solution against a real WinFsp
+391 tests pass on Linux and Windows. CI compiles the full Windows solution against a real WinFsp
 install and builds the installer, so a `[Code]` change that will not compile fails there rather than
 on a user's machine.
 
