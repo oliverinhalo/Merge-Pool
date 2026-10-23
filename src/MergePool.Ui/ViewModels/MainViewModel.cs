@@ -39,6 +39,7 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
         Settings = new SettingsViewModel(_service, () => _shutdown.Token);
         Web = new WebInterfaceViewModel(_service, () => _shutdown.Token);
         Duplication = new DuplicationViewModel(_service, () => _shutdown.Token);
+        Share = new ShareViewModel(_service, () => _shutdown.Token);
 
         CreatePoolCommand = new AsyncCommand(CreatePoolAsync, () => CanCreatePool);
         RefreshCommand = new AsyncCommand(() => RefreshAsync(_shutdown.Token));
@@ -115,6 +116,9 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
     public WebInterfaceViewModel Web { get; }
 
     public DuplicationViewModel Duplication { get; }
+
+    /// <summary>Sharing the selected pool on the network, which is how containers reach it.</summary>
+    public ShareViewModel Share { get; }
 
     public AsyncCommand CreatePoolCommand { get; }
 
@@ -233,6 +237,7 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
             {
                 SelectedPart = value?.Parts.FirstOrDefault();
                 Duplication.SetPool(value?.PoolId ?? Guid.Empty);
+                Share.SetPool(value?.PoolId ?? Guid.Empty);
                 RaiseCommandStates();
             }
         }
@@ -383,6 +388,10 @@ public sealed class MainViewModel : ViewModelBase, IAsyncDisposable
         {
             Duplication.Apply(state);
         }
+
+        // The share follows the same pool as the protected folders, and the service reconciles it
+        // on its own schedule, so the window simply reads it back each refresh.
+        await Share.LoadAsync().ConfigureAwait(true);
     }
 
     private async Task RefreshWebAsync(CancellationToken cancellationToken)

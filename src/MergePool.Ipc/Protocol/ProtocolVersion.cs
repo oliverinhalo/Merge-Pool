@@ -17,7 +17,7 @@ namespace MergePool.Ipc.Protocol;
 /// </remarks>
 public static class ProtocolVersion
 {
-    public const int Current = 7;
+    public const int Current = 8;
 
     public const int MinimumSupported = 1;
 
@@ -62,6 +62,11 @@ public static class Capabilities
     /// the stalls and failures behind that verdict (protocol 7).
     /// </summary>
     public const string IoHealth = "ioHealth";
+    /// <summary>
+    /// Sharing a pool on the network over SMB, managed by the service so the share follows the
+    /// mount rather than being put back by hand (protocol 8).
+    /// </summary>
+    public const string NetworkShare = "networkShare";
     public const string Config = "config";
     public const string Upgrade = "upgrade";
 
@@ -79,6 +84,7 @@ public static class Capabilities
         Duplication,
         AdvancedSettings,
         IoHealth,
+        NetworkShare,
         Config,
         Upgrade,
     ];
@@ -123,6 +129,8 @@ public static class Methods
     public const string DuplicationRemoveRule = "duplication.removeRule";
     public const string DuplicationSetOptions = "duplication.setOptions";
     public const string DuplicationRunNow = "duplication.runNow";
+    public const string ShareGet = "share.get";
+    public const string ShareSet = "share.set";
     public const string HealthCheck = "health.check";
 }
 

@@ -58,6 +58,25 @@ public sealed class BoolToVisibilityConverter : IValueConverter
 }
 
 /// <summary>The opposite of a boolean, for a control that is only useful while something is off.</summary>
+/// <summary>
+/// Shows an element only when the bound value has something in it. For the notes that exist only
+/// sometimes — a firewall warning, a problem with a share — so the layout has no gap when there is
+/// nothing to say.
+/// </summary>
+public sealed class NullToVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
+        value switch
+        {
+            null => Visibility.Collapsed,
+            string text => string.IsNullOrWhiteSpace(text) ? Visibility.Collapsed : Visibility.Visible,
+            _ => Visibility.Visible,
+        };
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
 public sealed class NotBoolConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture) => value is not true;

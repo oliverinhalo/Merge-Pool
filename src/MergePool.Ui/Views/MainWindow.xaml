@@ -940,6 +940,114 @@
                   </StackPanel>
                 </Border>
 
+                <!-- Sharing the pool itself on the network, which is how a container reaches it. -->
+                <TextBlock Text="Share this pool on the network" Style="{StaticResource Heading}"
+                           Margin="0,20,0,2" />
+                <TextBlock Style="{StaticResource Body}" Margin="0,0,0,4"
+                           Text="Windows file sharing (SMB), managed by MergePool: the share is created when the pool is mounted and removed when it is not, so it comes back by itself after an update, a restart or a drive letter change. This is how Docker and WSL2 reach a pool — a container cannot use the drive letter, because there is no real disk behind it to recognise." />
+                <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,12"
+                           Text="This shares the pool selected on the left." />
+
+                <Border Style="{StaticResource InsetCard}">
+                  <StackPanel>
+                    <CheckBox IsChecked="{Binding Share.Enabled, Mode=TwoWay}" Margin="0,0,0,12"
+                              IsEnabled="{Binding Share.HasPool}"
+                              ToolTip="Shares this pool over SMB while it is mounted. Nothing is shared until you have named at least one Windows account below: MergePool will not share a pool to everyone, and will not guess which account your containers use.">
+                      <TextBlock TextWrapping="Wrap" FontSize="13"
+                                 Text="Share this pool over SMB while it is mounted. The share follows the mount, so nothing has to put it back." />
+                    </CheckBox>
+
+                    <Grid Margin="0,0,0,12">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+
+                      <StackPanel Grid.Column="0">
+                        <TextBlock Text="SHARE NAME" Style="{StaticResource Subheading}" />
+                        <TextBox Text="{Binding Share.ShareName, UpdateSourceTrigger=LostFocus}"
+                                 ToolTip="What the share is called in \\machine\name. Leave it empty to use the pool's own name. Characters Windows will not take in a share name are replaced." />
+                      </StackPanel>
+
+                      <StackPanel Grid.Column="2" VerticalAlignment="Bottom">
+                        <CheckBox IsChecked="{Binding Share.ReadOnly, Mode=TwoWay}" Content="Read-only"
+                                  ToolTip="Clients can read the pool but not write to it, whatever the accounts below are otherwise allowed. Worth it for a media server that only ever plays files back." />
+                      </StackPanel>
+                    </Grid>
+
+                    <TextBlock Text="WHO MAY CONNECT" Style="{StaticResource Subheading}" />
+                    <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,8"
+                               Text="Windows accounts, as MACHINE\user or just user. Use a dedicated local account for this rather than your own sign-in: containers will hold its password in a file. There is no share until at least one account is named." />
+
+                    <ListBox ItemsSource="{Binding Share.Accounts}"
+                             SelectedItem="{Binding Share.SelectedAccount, Mode=TwoWay}"
+                             BorderThickness="0" Background="Transparent" MaxHeight="110"
+                             Margin="0,0,0,8" />
+
+                    <Grid Margin="0,0,0,12">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="8" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="6" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+
+                      <TextBox Grid.Column="0" Text="{Binding Share.NewAccount, UpdateSourceTrigger=PropertyChanged}"
+                               ToolTip="The account to allow, for example MERGEPOOL\poolsvc." />
+                      <Button Grid.Column="2" Content="Allow" MinWidth="80"
+                              Command="{Binding Share.AddAccountCommand}"
+                              ToolTip="Grants this account access to the share. The account must already exist in Windows — MergePool does not create accounts." />
+                      <Button Grid.Column="4" Content="Remove" MinWidth="88"
+                              Style="{StaticResource DangerButton}"
+                              Command="{Binding Share.RemoveAccountCommand}"
+                              ToolTip="Takes the selected account's access away. Anything currently connected as that account loses the share." />
+                    </Grid>
+
+                    <!-- What the share is doing, in its own words. -->
+                    <Border CornerRadius="{StaticResource ControlRadius}" Padding="11,9" Margin="0,0,0,12"
+                            Background="{DynamicResource SurfaceBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+                      <TextBlock Text="{Binding Share.StateText}" TextWrapping="Wrap" FontSize="13"
+                                 Foreground="{DynamicResource TextBrush}" />
+                    </Border>
+
+                    <Border CornerRadius="{StaticResource ControlRadius}" Padding="11,9" Margin="0,0,0,12"
+                            Background="{DynamicResource WarningSoftBrush}"
+                            BorderBrush="{DynamicResource WarningBorderBrush}" BorderThickness="1"
+                            Visibility="{Binding Share.FirewallNote, Converter={StaticResource NullToVisibility}}">
+                      <TextBlock Text="{Binding Share.FirewallNote}" TextWrapping="Wrap" FontSize="12"
+                                 Foreground="{DynamicResource WarningBrush}" />
+                    </Border>
+
+                    <StackPanel Visibility="{Binding Share.IsShared, Converter={StaticResource BoolToVisibility}}">
+                      <TextBlock Text="FOR DOCKER AND WSL2" Style="{StaticResource Subheading}" />
+                      <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,8"
+                                 Text="A Docker named volume, which Docker re-establishes every time a container starts. That is what makes it survive a reboot or a dropped session, where a mount inside the docker-desktop distro needs a script to put it back. Replace USER and PASSWORD with the account above." />
+
+                      <Border CornerRadius="{StaticResource ControlRadius}" Padding="10,8" Margin="0,0,0,8"
+                              Background="{DynamicResource SurfaceBrush}"
+                              BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1">
+                        <TextBlock Text="{Binding Share.DockerCommand}" Style="{StaticResource Numeric}"
+                                   FontSize="12" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource TextBrush}" />
+                      </Border>
+
+                      <StackPanel Orientation="Horizontal">
+                        <Button Content="Copy the command" MinWidth="148" Margin="0,0,6,0"
+                                Command="{Binding Share.CopyDockerCommand}"
+                                ToolTip="Copies the docker volume create line to the clipboard, ready to paste into a terminal once you have put the account's password in it." />
+                        <Button Content="Copy the path" MinWidth="120"
+                                Command="{Binding Share.CopyPathCommand}"
+                                ToolTip="Copies the share's address, for pasting into File Explorer on another machine or into a Compose file." />
+                      </StackPanel>
+                    </StackPanel>
+
+                    <TextBlock Style="{StaticResource Caption}" Margin="0,10,0,0" Text="{Binding Share.Message}" />
+                  </StackPanel>
+                </Border>
+
               </StackPanel>
             </ScrollViewer>
           </TabItem>

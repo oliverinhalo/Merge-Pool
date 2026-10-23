@@ -616,6 +616,72 @@ public sealed class MountRequest : IpcContract
     public string? MountPoint { get; set; }
 }
 
+/// <summary>
+/// Whether a pool is shared on the network over SMB, and what that share is doing. Protocol 8.
+/// </summary>
+public sealed class PoolShareDto : IpcContract
+{
+    [JsonPropertyName("poolId")]
+    public Guid PoolId { get; set; }
+
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; set; }
+
+    /// <summary>The share name. Empty means one derived from the pool's name.</summary>
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("readOnly")]
+    public bool ReadOnly { get; set; }
+
+    /// <summary>Windows accounts allowed to connect. No share is created without at least one.</summary>
+    [JsonPropertyName("allowedAccounts")]
+    public List<string> AllowedAccounts { get; set; } = [];
+
+    /// <summary>Whether the share exists right now.</summary>
+    [JsonPropertyName("isShared")]
+    public bool IsShared { get; set; }
+
+    /// <summary>What to point a client at, once it exists.</summary>
+    [JsonPropertyName("uncPath")]
+    public string? UncPath { get; set; }
+
+    /// <summary>Why it is not shared, when it should be.</summary>
+    [JsonPropertyName("problem")]
+    public string? Problem { get; set; }
+
+    /// <summary>
+    /// Whether Windows' File and Printer Sharing rules are on. Null when it could not be read.
+    /// Without them the share exists and nothing on the network can reach it.
+    /// </summary>
+    [JsonPropertyName("fileSharingEnabled")]
+    public bool? FileSharingEnabled { get; set; }
+
+    /// <summary>A ready-to-paste command for the way containers should mount this. Protocol 8.</summary>
+    [JsonPropertyName("dockerVolumeCommand")]
+    public string? DockerVolumeCommand { get; set; }
+}
+
+/// <summary>Changing a pool's share settings. Absent fields are left as they are. Protocol 8.</summary>
+public sealed class PoolShareRequest : IpcContract
+{
+    [JsonPropertyName("poolId")]
+    public Guid PoolId { get; set; }
+
+    [JsonPropertyName("enabled")]
+    public bool? Enabled { get; set; }
+
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("readOnly")]
+    public bool? ReadOnly { get; set; }
+
+    /// <summary>Replaces the account list outright when present.</summary>
+    [JsonPropertyName("allowedAccounts")]
+    public List<string>? AllowedAccounts { get; set; }
+}
+
 /// <summary>Placement tuning the UI can change at runtime. Absent fields are left as they are.</summary>
 public sealed class PlacementSettingsDto : IpcContract
 {

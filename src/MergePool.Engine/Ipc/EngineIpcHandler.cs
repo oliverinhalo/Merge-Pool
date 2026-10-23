@@ -17,7 +17,8 @@ namespace MergePool.Engine.Ipc;
 public sealed class EngineIpcHandler(
     PoolEngine engine,
     AutoUpdateService? updates = null,
-    Func<WebInterfaceResult>? webStatus = null) : IIpcMethodHandler
+    Func<WebInterfaceResult>? webStatus = null,
+    Func<IReadOnlyDictionary<Guid, Core.Sharing.PoolShareStatus>>? shareStatus = null) : IIpcMethodHandler
 {
     private readonly PoolEngine _engine = engine ?? throw new ArgumentNullException(nameof(engine));
 
@@ -64,6 +65,8 @@ public sealed class EngineIpcHandler(
         IpcMethods.DuplicationRemoveRule,
         IpcMethods.DuplicationSetOptions,
         IpcMethods.DuplicationRunNow,
+        IpcMethods.ShareGet,
+        IpcMethods.ShareSet,
         IpcMethods.HealthCheck,
     ];
 
@@ -123,6 +126,8 @@ public sealed class EngineIpcHandler(
                 IpcMethods.DuplicationRemoveRule => RemoveDuplicationRule(call),
                 IpcMethods.DuplicationSetOptions => SetDuplicationOptions(call),
                 IpcMethods.DuplicationRunNow => await RunDuplicationAsync(call, cancellationToken).ConfigureAwait(false),
+                IpcMethods.ShareGet => Ok(id, Share(PoolIdOf(call))),
+                IpcMethods.ShareSet => SetShare(call),
                 IpcMethods.HealthCheck => Ok(id, HealthCheck()),
                 _ => IpcResponse.Failure(id, IpcErrorCodes.MethodNotSupported, $"'{call.Request.Method}' is unknown."),
             };
@@ -978,6 +983,81 @@ public sealed class EngineIpcHandler(
     {
         _engine.Resume();
         return Ok(call.Request.Id, ServiceStatus());
+    }
+
+    /// <summary>What a pool's network share is set to, and what it is actually doing.</summary>
+    private PoolShareDto Share(Guid poolId)
+    {
+        var runtime = _engine.FindPool(poolId) ?? throw new KeyNotFoundException($"No pool {poolId:D}.");
+        var options = runtime.Definition.Share;
+        var status = shareStatus?.Invoke().GetValueOrDefault(poolId);
+
+        return new PoolShareDto
+        {
+            PoolId = poolId,
+            Enabled = options.Enabled,
+            Name = options.Name,
+            ReadOnly = options.ReadOnly,
+            AllowedAccounts = [.. options.AllowedAccounts],
+            IsShared = status?.IsShared ?? false,
+            UncPath = status?.UncPath,
+            Problem = status?.Problem ?? options.Problem(runtime.Definition.Name),
+            FileSharingEnabled = status?.FileSharingEnabled,
+            DockerVolumeCommand = DockerVolumeCommand(status?.UncPath, options.ReadOnly),
+        };
+    }
+
+    private IpcResponse SetShare(IpcCall call)
+    {
+        var request = call.PayloadAs<PoolShareRequest>();
+        var runtime = _engine.FindPool(request.PoolId)
+            ?? throw new KeyNotFoundException($"No pool {request.PoolId:D}.");
+
+        _engine.UpdatePoolShare(request.PoolId, share =>
+        {
+            share.Enabled = request.Enabled ?? share.Enabled;
+            share.Name = request.Name ?? share.Name;
+            share.ReadOnly = request.ReadOnly ?? share.ReadOnly;
+
+            if (request.AllowedAccounts is { } accounts)
+            {
+                share.AllowedAccounts = [.. accounts
+                    .Select(account => account.Trim())
+                    .Where(account => account.Length > 0)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)];
+            }
+        });
+
+        return Ok(call.Request.Id, Share(runtime.PoolId));
+    }
+
+    /// <summary>
+    /// The way a container should mount this share: a Docker named volume, which Docker
+    /// re-establishes every time a container starts, rather than a mount inside the docker-desktop
+    /// distro that its rebuilds take out from under you. See docs/DOCKER.md.
+    /// </summary>
+    private static string? DockerVolumeCommand(string? uncPath, bool readOnly)
+    {
+        if (string.IsNullOrWhiteSpace(uncPath))
+        {
+            return null;
+        }
+
+        // \\MACHINE\Share -> //host.docker.internal/Share, because a container reaches the host
+        // by that name rather than by the machine's own.
+        var share = uncPath.TrimStart('\\').Split('\\').LastOrDefault();
+        if (string.IsNullOrWhiteSpace(share))
+        {
+            return null;
+        }
+
+        var options = readOnly ? ",ro" : string.Empty;
+
+        return $"docker volume create pool-{share.ToLowerInvariant()} --driver local "
+            + "--opt type=cifs "
+            + $"--opt device=//host.docker.internal/{share} "
+            + "--opt o=addr=host.docker.internal,username=USER,password=PASSWORD,"
+            + $"vers=3.1.1,uid=1000,gid=1000,file_mode=0664,dir_mode=0775,nofail,soft{options}";
     }
 
     private HealthCheckResult HealthCheck()

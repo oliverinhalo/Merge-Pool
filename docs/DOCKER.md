@@ -36,23 +36,42 @@ Sharing the pool over SMB and mounting it inside the container works, and is wha
 recommends today. The part worth getting right is **how** the container mounts it, because that is
 what decides whether it survives a reboot, a service restart or a dropped session.
 
-### 1. Share the pool from Windows
+### 1. Let MergePool share the pool
 
-In an elevated PowerShell:
+In the window: **Remote → Share this pool on the network**. Tick it, name at least one Windows
+account that may connect, and the service does the rest.
 
-```powershell
-# $env:USERNAME is a stand-in: use a dedicated local account for this, not your own.
-New-SmbShare -Name Pool -Path P:\ -FullAccess "$env:USERNAME"
-```
+MergePool owns the share's lifecycle: it is created when the pool is mounted and removed when it is
+not, and each background tick makes the machine's shares match the pools again. That is what makes
+it survive the cases a hand-written watchdog trips over — a service restart, an update, a pool
+remounted by the I/O watchdog, a drive letter that changed. Nothing has to remember anything,
+because each pass simply asks what should be shared and what is.
 
 Notes that matter:
 
-- **The pool must be mounted by the MergePool service**, which it is by default. A pool mounted by a
-  process in your own session is not visible to the SMB server, which runs as `LocalSystem`.
-- **Use a dedicated local account** with access to the share, not your sign-in account. Containers
-  will hold its credentials in a file.
-- The share's path stops resolving while the pool is unmounted — during an update, or a remount.
-  See [when things drop](#when-things-drop) below.
+- **At least one account, always.** MergePool will not grant `Everyone` and will not guess an
+  account for you. Until one is named the switch is on and the share does not exist, and the window
+  says so rather than failing silently.
+- **Use a dedicated local account**, not your sign-in account: containers will hold its password in
+  a file. Create it in Windows first — MergePool does not create accounts.
+- **MergePool does not touch your firewall for this.** SMB is served by Windows on port 445 under
+  the built-in File and Printer Sharing rules, and quietly opening a system service port to a
+  network is a bigger decision than an application should take on someone's behalf. If those rules
+  are off, the window says so and leaves it to you. (It is different for the web interface, which
+  listens on a port MergePool chose and opens only that one.)
+- **Shares others own are never touched.** A share MergePool did not create, pointing somewhere
+  that is not one of its mount points, is left alone even if it has the name MergePool wanted — in
+  which case the pool stays unshared and says why.
+
+Doing it by hand still works, if you would rather:
+
+```powershell
+# A stand-in: use a dedicated local account, not your own.
+New-SmbShare -Name Pool -Path P:\ -FullAccess "MACHINE\poolsvc"
+```
+
+The pool must be mounted by the **MergePool service**, which it is by default. A pool mounted by a
+process in your own session is not visible to the SMB server, which runs as `LocalSystem`.
 
 ### 2. Mount it as a Docker volume, not inside the WSL distro
 
@@ -135,12 +154,13 @@ The share's path stops resolving whenever the pool is not mounted. That happens 
 
 - the service restarts, including during an **update** — brief, and the pool comes straight back;
 - someone unmounts the pool from the window;
-- the **I/O watchdog** recovers a pool that had stopped answering (new in this release — see
-  [the changelog](../CHANGELOG.md)). A remount is deliberate: it is how a wedged mount is recovered.
+- the **I/O watchdog** recovers a pool that had stopped answering — see
+  [the changelog](../CHANGELOG.md). A remount is deliberate: it is how a wedged mount is recovered.
 
-In all three cases the Windows share definition survives but points at a path that is briefly
-absent, and SMB sessions against it break. Containers using a Docker named volume recover on
-restart; a hand-made CIFS mount does not.
+In all three cases SMB sessions against the share break, because for a moment there is nothing
+behind it. A share MergePool manages is removed and recreated with the mount, so it is correct
+again as soon as the pool is back; containers using a Docker named volume pick it up on restart. A
+hand-made CIFS mount does not.
 
 If you see the share itself disappear rather than just break, check whether the share was created
 against the pool's drive letter while the pool was mounted *by a user session* rather than by the
@@ -149,23 +169,18 @@ service.
 
 ---
 
-## What MergePool will do about this
+## What MergePool does for you
 
-Managing the share by hand is the weak point, and MergePool is better placed to do it: it knows
-exactly when a pool is mounted, unmounted and remounted, and it already manages a firewall rule for
-its web interface with the same lifecycle.
+- A per-pool **"Share this pool on the network"** setting: share name, who may connect, read-only or
+  read-write.
+- The share created when the pool mounts and removed when it unmounts, reconciled on every tick, so
+  its life is tied to the mount's by construction rather than by a script.
+- The share re-established by itself after a service restart, an update, or a watchdog recovery.
+- The exact `docker volume create` line for the share, shown in the window with a copy button —
+  paste it, put the account's password in it, and run it.
 
-The intended shape, not yet implemented:
-
-- a per-pool **"Share this pool on the network (SMB)"** setting — share name, who may connect,
-  read-only or read-write, firewall rule;
-- the share created when the pool mounts and removed when it unmounts, so its life is tied to the
-  mount's by construction rather than by a script;
-- the share re-established automatically after an update or a watchdog recovery;
-- the exact `docker volume create` line for the share shown in the window, ready to copy.
-
-If you want this, say so on the issue — it is a question of priority, not of feasibility, and the
-production report behind this page is the evidence that the SMB route works.
+What it deliberately does not do: grant `Everyone`, invent an account, open your firewall, or touch
+a share it did not create.
 
 ---
 

@@ -42,6 +42,12 @@ Full detail, including what to expect and what to do when something goes wrong, 
 - **Says what the pool is holding**, as opposed to what its drives are holding. A pooled drive can be
   full of files that were never pooled; the two figures are measured and shown separately, and the
   pool's ceiling is its own content plus the space actually free.
+- **Shares a pool on the network, and keeps the share in step with the mount.** Windows file
+  sharing (SMB) managed by the service: created when the pool is mounted, removed when it is not,
+  and back by itself after a restart, an update or a drive letter change. This is how Docker and
+  WSL2 reach a pool, since a container cannot use the drive letter — see
+  [docs/DOCKER.md](docs/DOCKER.md). Off until an account is named; MergePool never grants everyone,
+  never opens your firewall, and never touches a share it did not create.
 - **Controllable from a browser**, on a port you choose, if you want it: the same pool status and
   controls, served by the service on your own network. Off by default, access-token protected, and
   bound to the local machine until you say otherwise.
@@ -99,16 +105,16 @@ See [docs/UPGRADES.md](docs/UPGRADES.md).
 | `src/MergePool.Ui` | WPF front end | Windows |
 | `src/MergePool.Updater` | Upgrade CLI | Windows |
 | `src/MergePool.Web` | Optional web interface: HTTP server, JSON API, single-page app | any OS |
-| `tests/` | 418 tests, all runnable on any OS | any OS |
+| `tests/` | 441 tests, all runnable on any OS | any OS |
 | `installer/` | Inno Setup script and the publish + package script | Windows |
 
 ## Status
 
-Version 0.10.0. All six milestones are in — core pool library, WinFsp mount, placement and throttle
+Version 0.11.0. All six milestones are in — core pool library, WinFsp mount, placement and throttle
 engine, service and IPC, WPF UI, installer and updater — plus growing and shrinking a live pool,
 measured pool usage, and updating itself from the release feed.
 
-418 tests pass on Linux and Windows. CI compiles the full Windows solution against a real WinFsp
+441 tests pass on Linux and Windows. CI compiles the full Windows solution against a real WinFsp
 install and builds the installer, so a `[Code]` change that will not compile fails there rather than
 on a user's machine.
 

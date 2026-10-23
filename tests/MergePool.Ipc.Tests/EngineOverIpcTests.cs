@@ -949,6 +949,62 @@ public sealed class EngineOverIpcTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_pools_share_settings_round_trip_and_stay_off_until_an_account_is_named()
+    {
+        var volume = AddDrive("One");
+        await using var client = await ConnectAsync();
+
+        var pool = await client.InvokeAsync<PoolDto>(
+            Methods.PoolCreate,
+            new CreatePoolRequest { Name = "Media", MountPoint = "P:", VolumeIds = [volume.ToVolumePath()] },
+            CancellationToken.None);
+
+        var fresh = await client.InvokeAsync<PoolShareDto>(
+            Methods.ShareGet, new PoolReference { PoolId = pool.PoolId }, CancellationToken.None);
+
+        Assert.False(fresh.Enabled);
+        Assert.False(fresh.IsShared);
+        Assert.Null(fresh.Problem);
+
+        // Turning it on without saying who may connect is not enough, and says so rather than
+        // quietly sharing the pool to whatever the SMB server's default is.
+        var halfDone = await client.InvokeAsync<PoolShareDto>(
+            Methods.ShareSet,
+            new PoolShareRequest { PoolId = pool.PoolId, Enabled = true },
+            CancellationToken.None);
+
+        Assert.True(halfDone.Enabled);
+        Assert.False(halfDone.IsShared);
+        Assert.Contains("No account", halfDone.Problem);
+
+        var ready = await client.InvokeAsync<PoolShareDto>(
+            Methods.ShareSet,
+            new PoolShareRequest
+            {
+                PoolId = pool.PoolId,
+                Name = "Media (2026)",
+                ReadOnly = true,
+                AllowedAccounts = ["MACHINE\\poolsvc", "  ", "MACHINE\\poolsvc"],
+            },
+            CancellationToken.None);
+
+        Assert.True(ready.Enabled);
+        Assert.True(ready.ReadOnly);
+        Assert.Null(ready.Problem);
+
+        // Blank and duplicate accounts are dropped on the way in.
+        Assert.Equal(["MACHINE\\poolsvc"], ready.AllowedAccounts);
+    }
+
+    [Fact]
+    public async Task Sharing_a_pool_on_the_network_is_announced_as_a_capability()
+    {
+        await using var client = await ConnectAsync();
+
+        Assert.True(client.Supports(Capabilities.NetworkShare));
+    }
+
+    [Fact]
     public async Task The_io_health_of_each_pool_is_announced_as_a_capability()
     {
         await using var client = await ConnectAsync();

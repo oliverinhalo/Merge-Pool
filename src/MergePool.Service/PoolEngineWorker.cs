@@ -1,5 +1,6 @@
 using System.Runtime.Versioning;
 using MergePool.Core.Config;
+using MergePool.Core.Sharing;
 using MergePool.Engine;
 using MergePool.Engine.Ipc;
 using MergePool.Ipc.Protocol;
@@ -27,6 +28,7 @@ public sealed class PoolEngineWorker(
     private WindowsFirewallRule? _firewall;
     private DateTimeOffset _lastDuplicationSweep;
     private IoHealthWatchdog? _watchdog;
+    private PoolShareHost? _shares;
 
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -57,7 +59,8 @@ public sealed class PoolEngineWorker(
 
         ApplyWebInterface();
 
-        var router = new IpcRouter().Register(new EngineIpcHandler(engine, updates.Service, DescribeWeb));
+        var router = new IpcRouter().Register(
+            new EngineIpcHandler(engine, updates.Service, DescribeWeb, DescribeShares));
 
         _server = new IpcServer(
             new IpcServerOptions
@@ -79,8 +82,13 @@ public sealed class PoolEngineWorker(
             ProtocolVersion.Current);
 
         _watchdog = new IoHealthWatchdog(engine, () => engine.Config.Service);
+        _shares = new PoolShareHost(engine, new WindowsSmbShares(logger), logger);
 
         engine.MountAll();
+
+        // Straight after mounting rather than on the first tick: a share that appears fifteen
+        // seconds late is fifteen seconds of containers failing to mount it at boot.
+        _shares.Apply();
 
         foreach (var problem in engine.CheckHealth())
         {
@@ -110,6 +118,11 @@ public sealed class PoolEngineWorker(
                 // Cheap when nothing changed: this only acts when the port, the scope or the on/off
                 // switch is not what the server is currently doing.
                 ApplyWebInterface();
+
+                // Likewise for the network shares: each pass makes the machine's shares match the
+                // pools that are mounted, which is what makes a share survive a remount, an update
+                // or a drive letter change without anything having to remember it did.
+                _shares?.Apply();
 
                 await RunUpdateCheckAsync(stoppingToken).ConfigureAwait(false);
             }
@@ -223,6 +236,10 @@ public sealed class PoolEngineWorker(
 
         _firewall?.Apply(wantsRule ? options.Port : null);
     }
+
+    /// <summary>What the UI is told about each pool's network share, over the pipe.</summary>
+    private IReadOnlyDictionary<Guid, PoolShareStatus> DescribeShares() =>
+        _shares?.Status ?? new Dictionary<Guid, PoolShareStatus>();
 
     /// <summary>What the UI is told about the web interface, over the pipe.</summary>
     private WebInterfaceResult DescribeWeb()
@@ -359,6 +376,12 @@ public sealed class PoolEngineWorker(
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         logger.LogInformation("Draining pools for shutdown.");
+
+        // Before draining: a share pointing at a pool that is about to be unmounted is a share
+        // clients will hang on rather than fail fast against.
+        _shares?.RemoveAll();
+        _shares = null;
+
         engine.Drain();
 
         // The port closes with the service, and the firewall rule goes with it: an open port that

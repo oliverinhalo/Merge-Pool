@@ -793,6 +793,24 @@ public sealed class PoolEngine : IDisposable
         }
     }
 
+    /// <summary>
+    /// Changes a pool's network share settings and persists them. The share itself is created and
+    /// removed by the service, which reconciles it against the mount on every tick.
+    /// </summary>
+    public void UpdatePoolShare(Guid poolId, Action<Core.Sharing.PoolShareOptions> update)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+
+        lock (_gate)
+        {
+            var definition = _config.Pools.FirstOrDefault(pool => pool.Id == poolId)
+                ?? throw new KeyNotFoundException($"No pool {poolId:D}.");
+
+            update(definition.Share);
+            _configStore.Save(_config);
+        }
+    }
+
     /// <summary>Applies update preferences and persists them, preserving unknown config fields.</summary>
     public void UpdateUpdateOptions(Action<UpdateOptions> update)
     {

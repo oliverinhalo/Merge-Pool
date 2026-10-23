@@ -63,6 +63,13 @@ public sealed class PoolDefinition
     [JsonPropertyName("duplication")]
     public List<DuplicationRule> Duplication { get; set; } = [];
 
+    /// <summary>
+    /// Whether this pool is shared on the network over SMB, and to whom. Off until someone has said
+    /// who may connect — see <see cref="Sharing.PoolShareOptions"/>.
+    /// </summary>
+    [JsonPropertyName("share")]
+    public Sharing.PoolShareOptions Share { get; set; } = new();
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement> AdditionalData { get; set; } = [];
 }

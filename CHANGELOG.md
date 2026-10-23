@@ -12,6 +12,46 @@ change:
 - **Config schema** — `config.json` `schemaVersion`, migrated forward only, backed up first,
   unknown fields preserved.
 
+## [0.11.0] - 2026-10-23
+
+Data format: unchanged. Config schema: unchanged — a `share` section is added to each pool and
+defaults to off. IPC protocol: 8, additive.
+
+### Added
+
+- **MergePool shares a pool on the network itself.** Docker Desktop cannot bind-mount a WinFsp
+  drive — there is no block device behind a user-mode file system for its Linux VM to recognise —
+  so a container reaches the pool over SMB or not at all. Doing that by hand meant creating the
+  share and then putting it back every time the pool remounted, which is a watchdog script that
+  becomes the thing that breaks. The service owns the share's lifecycle instead: created when the
+  pool is mounted, removed when it is not, and reconciled against the mounts on every tick, so it
+  survives a service restart, an update, a drive letter change and a recovery by the I/O watchdog
+  without anything having to remember it.
+- **The window shows the `docker volume create` line for the share**, with a copy button. A Docker
+  named volume is re-established by Docker every time a container starts, which is why it survives
+  a reboot or a dropped session where a `mount -t cifs` inside the `docker-desktop` distro — a
+  distro Docker rebuilds out from under you — needs a script to put it back.
+- `share.get` and `share.set` over IPC, capability `networkShare`.
+
+### Security
+
+These are deliberate refusals, not omissions:
+
+- **No share without a named account.** Turning sharing on is not enough: until a Windows account is
+  named the share does not exist and the window says why. MergePool never grants `Everyone` and
+  never guesses an account — the pool holds everything its owner has, and the person setting this up
+  is the only one who knows which service account their containers use.
+- **The firewall is left alone.** SMB is served by Windows on port 445 under the built-in File and
+  Printer Sharing rules. Opening a system service port to a network is a bigger decision than an
+  application should take on someone's behalf, so MergePool reports whether those rules are on and
+  leaves them to you. (The web interface is different: it listens on a port MergePool chose, and
+  opens only that one.)
+- **A share MergePool did not create is never touched**, even one with the name MergePool wanted
+  and even when a pool is asking for it. The pool stays unshared and says why, rather than removing
+  a share nothing here knows anything about.
+- Share names are reduced to what the SMB server will take, and a name with nothing usable left in
+  it is refused rather than guessed at.
+
 ## [0.10.0] - 2026-10-23
 
 Data format: unchanged. Config schema: unchanged — one optional `service.recoverStalledMounts` field
