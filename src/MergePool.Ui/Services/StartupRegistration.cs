@@ -32,6 +32,8 @@ public static class StartupRegistration
 
     private const string PaneRatioValueName = "LeftPaneRatio";
 
+    private const string AdvancedValueName = "ShowAdvanced";
+
     /// <summary>The default share of the body the pools take, which is also the reset value.</summary>
     public const double DefaultPaneRatio = 1.25 / 2.25;
 
@@ -81,6 +83,47 @@ public static class StartupRegistration
 
     private static double Clamp(double ratio) =>
         double.IsFinite(ratio) ? Math.Clamp(ratio, 0.2, 0.8) : DefaultPaneRatio;
+
+    /// <summary>
+    /// Whether the window is showing the expert tunables. Off by default: the settings that matter
+    /// day to day are the ones that should be in front of someone who has just installed this.
+    /// </summary>
+    /// <remarks>
+    /// Remembered per user, beside the other window preferences, because someone who went looking
+    /// for the advanced settings once should not have to find the toggle again every time they open
+    /// the window.
+    /// </remarks>
+    public static bool ShowAdvanced()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(PreferencesKey);
+            return key?.GetValue(AdvancedValueName) is int value && value != 0;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            return false;
+        }
+    }
+
+    public static bool SetShowAdvanced(bool advanced)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.CreateSubKey(PreferencesKey, writable: true);
+            if (key is null)
+            {
+                return false;
+            }
+
+            key.SetValue(AdvancedValueName, advanced ? 1 : 0, RegistryValueKind.DWord);
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            return false;
+        }
+    }
 
     /// <summary>
     /// Whether the window reopens itself on a new version instead of waiting to be asked. On by

@@ -396,7 +396,16 @@ public sealed class PoolWinFspFileSystem(PoolFileSystemEngine engine, string vol
 
         if (context is not DirectoryCursor cursor)
         {
-            cursor = new DirectoryCursor(_engine.ReadDirectory(handle, pattern, marker));
+            // A listing the engine cannot vouch for comes back as a failure rather than as a short
+            // listing: a folder reported empty while one of the pool's drives is unreadable is how
+            // an application concludes its data is gone.
+            if (_engine.TryReadDirectory(handle, pattern, marker, out var entries) != PoolFsStatus.Success
+                || entries is null)
+            {
+                return false;
+            }
+
+            cursor = new DirectoryCursor(entries);
             context = cursor;
         }
 

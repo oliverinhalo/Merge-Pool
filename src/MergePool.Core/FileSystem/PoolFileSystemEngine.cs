@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using MergePool.Core.Health;
 using MergePool.Core.Model;
 using MergePool.Core.Paths;
 using MergePool.Core.Placement;
@@ -16,7 +17,8 @@ public sealed class PoolFileSystemEngine(
     IPlacementStrategy placement,
     FileRelocator? relocator = null,
     PoolFileSystemOptions? options = null,
-    IIoObserver? ioObserver = null)
+    IIoObserver? ioObserver = null,
+    IoHealthMonitor? health = null)
 {
     private readonly IPoolTopology _topology = topology ?? throw new ArgumentNullException(nameof(topology));
     private readonly PoolOperations _operations = new(topology, placement);
@@ -25,12 +27,46 @@ public sealed class PoolFileSystemEngine(
     private readonly PoolFileSystemOptions _options = options ?? new PoolFileSystemOptions();
     private readonly IIoObserver? _ioObserver = ioObserver;
 
+    /// <summary>
+    /// Where stalls and failures in this path are reported, so the service can act on a pool that
+    /// has stopped answering instead of leaving it wedged. Optional: without one nothing is
+    /// recorded and behaviour is unchanged.
+    /// </summary>
+    private readonly IoHealthMonitor? _health = health;
+
+    public IoHealthMonitor? Health => _health;
+
     public UnionView View => _operations.View;
 
     public PoolOperations Operations => _operations;
 
     /// <summary>Raised whenever a file is moved between drives, for status reporting.</summary>
     public event EventHandler<RelocationResult>? FileRelocated;
+
+    /// <summary>
+    /// The status for "we did not find it". A miss is only evidence of absence when the view we
+    /// looked in accounted for every drive.
+    /// </summary>
+    /// <remarks>
+    /// This is the guard for the reported near-miss: a folder with real content in it listing as
+    /// empty, successfully, because the drive holding the content did not answer a volume query for
+    /// a moment. "I cannot read one of this pool's drives" and "that file is not here" are different
+    /// answers, and only one of them is safe for an application to act on.
+    /// <para>A drive that is genuinely gone does not come through here: it resolves as offline, the
+    /// pool is complete-but-degraded, and misses are reported as misses, which is the behaviour
+    /// MergePool has always promised for a pool running on fewer drives.</para>
+    /// </remarks>
+    private PoolFsStatus NotFound(PoolSnapshot? snapshot = null)
+    {
+        var view = snapshot ?? _topology.Current;
+
+        if (!view.OnlineParts.Any())
+        {
+            return PoolFsStatus.DeviceNotReady;
+        }
+
+        return view.IsComplete ? PoolFsStatus.ObjectNameNotFound : PoolFsStatus.DeviceNotReady;
+    }
 
     public PoolVolumeInfo GetVolumeInfo()
     {
@@ -55,9 +91,7 @@ public sealed class PoolFileSystemEngine(
         var location = View.Find(normalized);
         if (location is null)
         {
-            return _topology.Current.OnlineParts.Any()
-                ? PoolFsStatus.ObjectNameNotFound
-                : PoolFsStatus.DeviceNotReady;
+            return NotFound();
         }
 
         info = Describe(location);
@@ -120,7 +154,7 @@ public sealed class PoolFileSystemEngine(
         {
             if (!creating)
             {
-                return PoolFsStatus.ObjectNameNotFound;
+                return NotFound();
             }
 
             if (!PoolPath.IsRoot(poolPath) && !ParentExists(poolPath))
@@ -171,7 +205,15 @@ public sealed class PoolFileSystemEngine(
         {
             if (request.Disposition is PoolCreateDisposition.Open or PoolCreateDisposition.Overwrite)
             {
-                return PoolFsStatus.ObjectNameNotFound;
+                return NotFound();
+            }
+
+            // Creating a file we may simply not be able to see is worse than refusing: it would end
+            // up on a second drive while the original sits on the one that did not answer, and the
+            // pool would then have two files with one name to reconcile.
+            if (!_topology.Current.IsComplete)
+            {
+                return PoolFsStatus.DeviceNotReady;
             }
 
             if (!ParentExists(poolPath))
@@ -256,25 +298,49 @@ public sealed class PoolFileSystemEngine(
             return PoolFsStatus.FileIsADirectory;
         }
 
+        // Shared with every other read and write of this handle, exclusive only against a
+        // relocation swapping the stream out. Bounded: see PoolFileHandle.
+        if (!handle.EnterIo(_options.IoWait))
+        {
+            _health?.RecordStall("read", _options.IoWait, $"'{handle.PoolPath}' did not become readable in time");
+            return PoolFsStatus.IoTimeout;
+        }
+
         try
         {
-            var stream = handle.RequireStream();
-            if (offset >= stream.Length)
+            var file = handle.FileHandle;
+            var length = RandomAccess.GetLength(file);
+
+            if (offset >= length)
             {
                 return PoolFsStatus.EndOfFile;
             }
 
-            stream.Position = offset;
-
             var started = Stopwatch.GetTimestamp();
-            transferred = stream.Read(buffer);
+
+            // By absolute offset, never by seeking: a shared position is what let two concurrent
+            // reads of one handle return each other's bytes.
+            transferred = RandomAccess.Read(file, buffer, offset);
+
             Observe(handle.PartId, IoKind.Read, transferred, started);
+            _health?.RecordHealthy("read");
 
             return transferred == 0 ? PoolFsStatus.EndOfFile : PoolFsStatus.Success;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
+            _health?.RecordFault("read", exception.Message);
             return PoolFsStatusExtensions.FromException(exception);
+        }
+        catch (ObjectDisposedException)
+        {
+            // The handle was closed under us. Not an error worth a stack trace; the caller's handle
+            // is gone and Windows will tell it so.
+            return PoolFsStatus.NoSuchDevice;
+        }
+        finally
+        {
+            handle.ExitIo();
         }
     }
 
@@ -300,37 +366,63 @@ public sealed class PoolFileSystemEngine(
             return PoolFsStatus.FileIsADirectory;
         }
 
+        if (!handle.EnterIo(_options.IoWait))
+        {
+            _health?.RecordStall("write", _options.IoWait, $"'{handle.PoolPath}' did not become writable in time");
+            return PoolFsStatus.IoTimeout;
+        }
+
+        var holdsIo = true;
+
         try
         {
-            var stream = handle.RequireStream();
-            var start = writeToEndOfFile ? stream.Length : offset;
+            var file = handle.FileHandle;
+            var length = RandomAccess.GetLength(file);
+            var start = writeToEndOfFile ? length : offset;
 
             if (constrainedIo)
             {
                 // Constrained IO must never extend the file (cached writes past EOF).
-                if (start >= stream.Length)
+                if (start >= length)
                 {
                     info = DescribeHandle(handle);
                     return PoolFsStatus.Success;
                 }
 
-                var room = (int)Math.Min(buffer.Length, stream.Length - start);
+                var room = (int)Math.Min(buffer.Length, length - start);
                 buffer = buffer[..room];
             }
 
             var end = start + buffer.Length;
-            var status = EnsureRoomFor(handle, end);
-            if (status != PoolFsStatus.Success)
+
+            if (end > length)
             {
-                return status;
+                // Only a write that grows the file can need another drive, and only that case pays
+                // for the check. A write inside the file it already fits in touches no topology at
+                // all, which is what a megabyte of 64 KiB writes is made of.
+                handle.ExitIo();
+                holdsIo = false;
+
+                var status = EnsureRoomFor(handle, end);
+                if (status != PoolFsStatus.Success)
+                {
+                    return status;
+                }
+
+                if (!handle.EnterIo(_options.IoWait))
+                {
+                    _health?.RecordStall("write", _options.IoWait, $"'{handle.PoolPath}' did not become writable in time");
+                    return PoolFsStatus.IoTimeout;
+                }
+
+                holdsIo = true;
+                file = handle.FileHandle;
             }
 
-            stream = handle.RequireStream();
-            stream.Position = start;
-
             var started = Stopwatch.GetTimestamp();
-            stream.Write(buffer);
+            RandomAccess.Write(file, buffer, start);
             Observe(handle.PartId, IoKind.Write, buffer.Length, started);
+            _health?.RecordHealthy("write");
 
             transferred = buffer.Length;
 
@@ -339,7 +431,19 @@ public sealed class PoolFileSystemEngine(
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
+            _health?.RecordFault("write", exception.Message);
             return PoolFsStatusExtensions.FromException(exception);
+        }
+        catch (ObjectDisposedException)
+        {
+            return PoolFsStatus.NoSuchDevice;
+        }
+        finally
+        {
+            if (holdsIo)
+            {
+                handle.ExitIo();
+            }
         }
     }
 
@@ -355,9 +459,7 @@ public sealed class PoolFileSystemEngine(
 
         try
         {
-            var stream = handle.RequireStream();
-
-            if (setAllocationSize && newSize < stream.Length)
+            if (setAllocationSize && newSize < CurrentLength(handle))
             {
                 // Shrinking the allocation below the data length is a no-op for us.
                 info = DescribeHandle(handle);
@@ -370,10 +472,25 @@ public sealed class PoolFileSystemEngine(
                 return status;
             }
 
-            stream = handle.RequireStream();
-            if (!setAllocationSize || newSize > stream.Length)
+            // Changing the length is exclusive: a read picking up a length mid-truncation reads past
+            // the end of the file.
+            if (!handle.EnterExclusive(_options.ExclusiveWait))
             {
-                stream.SetLength(newSize);
+                _health?.RecordStall("resize", _options.ExclusiveWait, $"'{handle.PoolPath}' would not drain");
+                return PoolFsStatus.IoTimeout;
+            }
+
+            try
+            {
+                var file = handle.FileHandle;
+                if (!setAllocationSize || newSize > RandomAccess.GetLength(file))
+                {
+                    RandomAccess.SetLength(file, newSize);
+                }
+            }
+            finally
+            {
+                handle.ExitExclusive();
             }
 
             info = DescribeHandle(handle);
@@ -381,7 +498,39 @@ public sealed class PoolFileSystemEngine(
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
+            _health?.RecordFault("resize", exception.Message);
             return PoolFsStatusExtensions.FromException(exception);
+        }
+        catch (ObjectDisposedException)
+        {
+            return PoolFsStatus.NoSuchDevice;
+        }
+    }
+
+    /// <summary>The file's length right now, or 0 for a handle with no data stream.</summary>
+    private static long CurrentLength(PoolFileHandle handle)
+    {
+        if (handle.Stream is null)
+        {
+            return 0;
+        }
+
+        if (!handle.EnterIo())
+        {
+            return 0;
+        }
+
+        try
+        {
+            return RandomAccess.GetLength(handle.FileHandle);
+        }
+        catch (Exception exception) when (exception is IOException or ObjectDisposedException)
+        {
+            return 0;
+        }
+        finally
+        {
+            handle.ExitIo();
         }
     }
 
@@ -394,15 +543,30 @@ public sealed class PoolFileSystemEngine(
             return PoolFsStatus.Success;
         }
 
+        if (!handle.EnterIo(_options.IoWait))
+        {
+            _health?.RecordStall("flush", _options.IoWait, $"'{handle.PoolPath}' did not become flushable in time");
+            return PoolFsStatus.IoTimeout;
+        }
+
         try
         {
             handle.Stream?.Flush(flushToDisk: true);
             info = DescribeHandle(handle);
             return PoolFsStatus.Success;
         }
+        catch (ObjectDisposedException)
+        {
+            return PoolFsStatus.NoSuchDevice;
+        }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
+            _health?.RecordFault("flush", exception.Message);
             return PoolFsStatusExtensions.FromException(exception);
+        }
+        finally
+        {
+            handle.ExitIo();
         }
     }
 
@@ -462,6 +626,8 @@ public sealed class PoolFileSystemEngine(
             return PoolFsStatus.Success;
         }
 
+        var renaming = false;
+
         try
         {
             if (!ParentExists(destination))
@@ -469,9 +635,16 @@ public sealed class PoolFileSystemEngine(
                 return PoolFsStatus.ObjectPathNotFound;
             }
 
-            // The stream has to let go of the name before the host rename can happen.
+            // The stream has to let go of the name before the host rename can happen, so no read or
+            // write may be in flight while it does.
+            if (!handle.EnterExclusive(_options.ExclusiveWait))
+            {
+                _health?.RecordStall("rename", _options.ExclusiveWait, $"'{handle.PoolPath}' would not drain");
+                return PoolFsStatus.IoTimeout;
+            }
+
+            renaming = true;
             var hadStream = handle.Stream is not null;
-            var position = handle.Stream?.Position ?? 0;
             handle.CloseStream();
 
             _operations.Rename(handle.PoolPath, destination, replaceIfExists);
@@ -487,14 +660,14 @@ public sealed class PoolFileSystemEngine(
 
             if (hadStream)
             {
+                // No position to restore: data is read and written by absolute offset now.
                 var stream = new FileStream(
                     handle.HostPath,
                     FileMode.Open,
                     handle.Access.HasFlag(PoolAccess.Write) ? FileAccess.ReadWrite : FileAccess.Read,
-                    FileShare.ReadWrite | FileShare.Delete)
-                {
-                    Position = position,
-                };
+                    FileShare.ReadWrite | FileShare.Delete,
+                    _options.StreamBufferSize,
+                    FileOptions.None);
 
                 handle.Rebind(handle.PartId, handle.HostPath, stream);
                 handle.RelocationCount--; // a rename is not a relocation
@@ -504,7 +677,15 @@ public sealed class PoolFileSystemEngine(
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
         {
+            _health?.RecordFault("rename", exception.Message);
             return PoolFsStatusExtensions.FromException(exception);
+        }
+        finally
+        {
+            if (renaming)
+            {
+                handle.ExitExclusive();
+            }
         }
     }
 
@@ -524,13 +705,22 @@ public sealed class PoolFileSystemEngine(
 
         try
         {
-            return View.EnumerateEntries(handle.PoolPath).Count == 0
+            var listing = View.List(handle.PoolPath);
+
+            // An "empty" folder assembled from a view missing a drive is not an empty folder, and
+            // the next thing Windows does with this answer is delete it.
+            if (!listing.IsComplete)
+            {
+                return PoolFsStatus.DeviceNotReady;
+            }
+
+            return listing.Entries.Count == 0
                 ? PoolFsStatus.Success
                 : PoolFsStatus.DirectoryNotEmpty;
         }
         catch (DirectoryNotFoundException)
         {
-            return PoolFsStatus.ObjectNameNotFound;
+            return NotFound();
         }
     }
 
@@ -568,6 +758,53 @@ public sealed class PoolFileSystemEngine(
     public void Close(PoolFileHandle handle) => handle?.Dispose();
 
     /// <summary>
+    /// Merged directory listing for the mount, which refuses rather than serving a listing it
+    /// cannot vouch for. This is what the WinFsp adapter calls.
+    /// </summary>
+    public PoolFsStatus TryReadDirectory(
+        PoolFileHandle handle,
+        string? pattern,
+        string? marker,
+        out IReadOnlyList<PoolFileInfo>? entries)
+    {
+        ArgumentNullException.ThrowIfNull(handle);
+        entries = null;
+
+        if (!handle.IsDirectory)
+        {
+            return PoolFsStatus.NotADirectory;
+        }
+
+        try
+        {
+            var listing = View.List(handle.PoolPath, string.IsNullOrEmpty(pattern) ? "*" : pattern);
+
+            if (!listing.IsComplete)
+            {
+                _health?.RecordFault(
+                    "list",
+                    $"'{handle.PoolPath}' could not be listed in full: a drive of this pool did not answer");
+
+                // Telling Windows the device is not ready is honest and recoverable. Telling it the
+                // folder is empty is neither.
+                return PoolFsStatus.DeviceNotReady;
+            }
+
+            entries = Project(handle, listing.Entries, marker);
+            return PoolFsStatus.Success;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            _health?.RecordFault("list", exception.Message);
+            return PoolFsStatusExtensions.FromException(exception);
+        }
+    }
+
+    /// <summary>
     /// Merged directory listing, optionally resumed after <paramref name="marker"/> as WinFsp's
     /// directory buffering expects.
     /// </summary>
@@ -581,7 +818,14 @@ public sealed class PoolFileSystemEngine(
         }
 
         var entries = View.EnumerateEntries(handle.PoolPath, string.IsNullOrEmpty(pattern) ? "*" : pattern);
+        return Project(handle, entries, marker);
+    }
 
+    private IReadOnlyList<PoolFileInfo> Project(
+        PoolFileHandle handle,
+        IReadOnlyList<PoolEntry> entries,
+        string? marker)
+    {
         IEnumerable<PoolEntry> sequence = entries;
         if (!string.IsNullOrEmpty(marker))
         {
@@ -611,8 +855,7 @@ public sealed class PoolFileSystemEngine(
     /// </summary>
     private PoolFsStatus EnsureRoomFor(PoolFileHandle handle, long requiredLength)
     {
-        var stream = handle.RequireStream();
-        var growth = requiredLength - stream.Length;
+        var growth = requiredLength - CurrentLength(handle);
         if (growth <= 0)
         {
             return PoolFsStatus.Success;
@@ -651,9 +894,20 @@ public sealed class PoolFileSystemEngine(
         return RelocateOpenHandle(handle, current, target);
     }
 
+    /// <summary>
+    /// Moves an open file to another drive and swaps the handle onto it. Exclusive: the stream is
+    /// disposed and replaced, and doing that under a concurrent read is a use-after-dispose in the
+    /// kernel's I/O path.
+    /// </summary>
     private PoolFsStatus RelocateOpenHandle(PoolFileHandle handle, PoolPart from, PoolPart target)
     {
-        var position = handle.Stream?.Position ?? 0;
+        if (!handle.EnterExclusive(_options.ExclusiveWait))
+        {
+            _health?.RecordStall(
+                "relocate", _options.ExclusiveWait, $"'{handle.PoolPath}' would not drain for a move between drives");
+            return PoolFsStatus.IoTimeout;
+        }
+
         var access = handle.Access.HasFlag(PoolAccess.Write) ? FileAccess.ReadWrite : FileAccess.Read;
 
         handle.CloseStream();
@@ -671,10 +925,12 @@ public sealed class PoolFileSystemEngine(
             var result = _relocator.Relocate(source, target);
 
             var stream = new FileStream(
-                result.NewHostPath, FileMode.Open, access, FileShare.ReadWrite | FileShare.Delete)
-            {
-                Position = position,
-            };
+                result.NewHostPath,
+                FileMode.Open,
+                access,
+                FileShare.ReadWrite | FileShare.Delete,
+                _options.StreamBufferSize,
+                FileOptions.None);
 
             handle.Rebind(target.PartId, result.NewHostPath, stream);
             FileRelocated?.Invoke(this, result);
@@ -684,22 +940,29 @@ public sealed class PoolFileSystemEngine(
         {
             // Put the handle back on the original file so the caller sees a failed write, not a
             // broken handle.
-            TryReopen(handle, access, position);
+            TryReopen(handle, access, _options.StreamBufferSize);
+            _health?.RecordFault("relocate", exception.Message);
             return PoolFsStatusExtensions.FromException(exception);
+        }
+        finally
+        {
+            handle.ExitExclusive();
         }
     }
 
-    private static void TryReopen(PoolFileHandle handle, FileAccess access, long position)
+    private static void TryReopen(PoolFileHandle handle, FileAccess access, int bufferSize)
     {
         try
         {
             if (File.Exists(handle.HostPath))
             {
                 var stream = new FileStream(
-                    handle.HostPath, FileMode.Open, access, FileShare.ReadWrite | FileShare.Delete)
-                {
-                    Position = position,
-                };
+                    handle.HostPath,
+                    FileMode.Open,
+                    access,
+                    FileShare.ReadWrite | FileShare.Delete,
+                    bufferSize,
+                    FileOptions.None);
 
                 handle.Rebind(handle.PartId, handle.HostPath, stream);
                 handle.RelocationCount--;
@@ -710,6 +973,22 @@ public sealed class PoolFileSystemEngine(
         }
         catch (UnauthorizedAccessException)
         {
+        }
+    }
+
+    /// <summary>
+    /// The length of an open file, read through its handle. Called from inside the shared lock on
+    /// the write path, so it must not take it again.
+    /// </summary>
+    private static long HandleLength(PoolFileHandle handle)
+    {
+        try
+        {
+            return handle.Stream is null ? 0 : RandomAccess.GetLength(handle.FileHandle);
+        }
+        catch (Exception exception) when (exception is IOException or ObjectDisposedException)
+        {
+            return 0;
         }
     }
 
@@ -784,7 +1063,7 @@ public sealed class PoolFileSystemEngine(
     private PoolFileInfo DescribeHandle(PoolFileHandle handle)
     {
         var part = _topology.Current.FindPart(handle.PartId);
-        var length = handle.Stream?.Length ?? 0;
+        var length = HandleLength(handle);
         var info = new FileInfo(handle.HostPath);
 
         return new PoolFileInfo
@@ -861,7 +1140,18 @@ public sealed class PoolFileSystemOptions
     /// <summary>Free space kept on a drive before a growing file is moved off it.</summary>
     public long RelocationReserveBytes { get; init; } = 64L * 1024 * 1024;
 
-    public int StreamBufferSize { get; init; } = 0x10000;
+    /// <summary>
+    /// <see cref="FileStream"/> buffering, which is now pure overhead and a hazard: every read and
+    /// write goes through <see cref="RandomAccess"/> on the handle, and mixing that with a stream's
+    /// own buffer would mean two views of the same file. WinFsp does its own caching.
+    /// </summary>
+    public int StreamBufferSize { get; init; } = 1;
+
+    /// <summary>How long a read or write waits for a relocation or truncation to finish.</summary>
+    public TimeSpan IoWait { get; init; } = PoolFileHandle.DefaultIoWait;
+
+    /// <summary>How long an operation that swaps the stream waits for in-flight I/O to drain.</summary>
+    public TimeSpan ExclusiveWait { get; init; } = PoolFileHandle.DefaultExclusiveWait;
 
     /// <summary>Bypasses the host cache. WinFsp does its own caching, so this stays on.</summary>
     public bool WriteThrough { get; init; }

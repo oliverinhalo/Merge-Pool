@@ -23,6 +23,13 @@ public enum PoolFsStatus
     IoError,
     CannotDelete,
     NoSuchDevice,
+
+    /// <summary>
+    /// A bounded wait ran out. Reported instead of waiting for ever: Windows treats a timeout as a
+    /// transient failure the caller can retry, where a callback that never returns leaves the
+    /// process stuck in the kernel with no way out, not even a kill.
+    /// </summary>
+    IoTimeout,
 }
 
 public static class PoolFsStatusExtensions

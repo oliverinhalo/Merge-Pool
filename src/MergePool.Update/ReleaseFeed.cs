@@ -97,19 +97,37 @@ public interface IReleaseFeed
 /// Reads the repository's GitHub releases. Only ever a GET: this never authenticates, never posts,
 /// and a failure is reported rather than thrown at the caller's tick.
 /// </summary>
-public sealed class GitHubReleaseFeed(HttpClient http, ReleaseFeedOptions? options = null) : IReleaseFeed
+public sealed class GitHubReleaseFeed : IReleaseFeed
 {
-    private readonly HttpClient _http = http ?? throw new ArgumentNullException(nameof(http));
-    private readonly ReleaseFeedOptions _options = options ?? new ReleaseFeedOptions();
+    private readonly HttpClient _http;
+
+    /// <summary>
+    /// Read on every check rather than captured once, so changing whether pre-releases count takes
+    /// effect at the next check instead of at the next service restart.
+    /// </summary>
+    private readonly Func<ReleaseFeedOptions> _options;
+
+    public GitHubReleaseFeed(HttpClient http, ReleaseFeedOptions? options = null)
+        : this(http, () => options ?? new ReleaseFeedOptions())
+    {
+    }
+
+    public GitHubReleaseFeed(HttpClient http, Func<ReleaseFeedOptions> options)
+    {
+        _http = http ?? throw new ArgumentNullException(nameof(http));
+        _options = options ?? throw new ArgumentNullException(nameof(options));
+    }
 
     public async Task<ReleaseInfo?> GetLatestAsync(CancellationToken cancellationToken)
     {
+        var options = _options();
+
         var path = string.Create(
             CultureInfo.InvariantCulture,
-            $"repos/{_options.Owner}/{_options.Repository}/releases?per_page=20");
+            $"repos/{options.Owner}/{options.Repository}/releases?per_page=20");
 
         var releases = await _http
-            .GetFromJsonAsync<List<GitHubRelease>>(new Uri(_options.BaseAddress, path), cancellationToken)
+            .GetFromJsonAsync<List<GitHubRelease>>(new Uri(options.BaseAddress, path), cancellationToken)
             .ConfigureAwait(false);
 
         if (releases is null)
@@ -119,8 +137,8 @@ public sealed class GitHubReleaseFeed(HttpClient http, ReleaseFeedOptions? optio
 
         var candidates = releases
             .Where(release => !release.Draft)
-            .Where(release => _options.IncludePrereleases || !release.Prerelease)
-            .Select(Describe)
+            .Where(release => options.IncludePrereleases || !release.Prerelease)
+            .Select(release => Describe(release, options))
             .Where(release => release is not null)
             .OrderByDescending(release => release!.Version, Comparer<string>.Create(ReleaseInfo.Compare))
             .ToList();
@@ -128,7 +146,7 @@ public sealed class GitHubReleaseFeed(HttpClient http, ReleaseFeedOptions? optio
         return candidates.FirstOrDefault();
     }
 
-    private ReleaseInfo? Describe(GitHubRelease release)
+    private static ReleaseInfo? Describe(GitHubRelease release, ReleaseFeedOptions options)
     {
         if (string.IsNullOrWhiteSpace(release.TagName) || !ReleaseInfo.TryParse(release.TagName, out var version))
         {
@@ -136,7 +154,7 @@ public sealed class GitHubReleaseFeed(HttpClient http, ReleaseFeedOptions? optio
         }
 
         var package = release.Assets.FirstOrDefault(asset =>
-            asset.Name.EndsWith(_options.PackageAssetSuffix, StringComparison.OrdinalIgnoreCase)
+            asset.Name.EndsWith(options.PackageAssetSuffix, StringComparison.OrdinalIgnoreCase)
             && !string.IsNullOrWhiteSpace(asset.BrowserDownloadUrl));
 
         if (package is null || !Uri.TryCreate(package.BrowserDownloadUrl, UriKind.Absolute, out var url))

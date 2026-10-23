@@ -170,7 +170,11 @@ public sealed class DuplicationPlanner(IPoolTopology topology, DuplicationOption
                 protectedFiles++;
             }
 
-            if (rule.Surplus is SurplusCopies.Remove)
+            // Removing a copy is the one thing in here that destroys data, so it is only planned
+            // from a view that accounts for every drive. With a drive unreadable, the copies we can
+            // see are an undercount of the copies that exist — and "there are more copies than the
+            // rule asks for" computed from an undercount is how you delete the wrong one.
+            if (rule.Surplus is SurplusCopies.Remove && _topology.Current.IsComplete)
             {
                 foreach (var action in PlanSurplus(rule, poolPath, copies, newest, wanted, eligible, length))
                 {

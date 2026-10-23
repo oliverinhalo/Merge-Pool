@@ -10,6 +10,7 @@ custom kernel driver.
 | --- | --- |
 | **Install and use MergePool on Windows** | **[docs/INSTALL.md](docs/INSTALL.md)** |
 | Build it from source (Windows, Linux or macOS) | [docs/BUILDING.md](docs/BUILDING.md) |
+| Reach a pool from Docker Desktop or WSL2 | [docs/DOCKER.md](docs/DOCKER.md) |
 | Understand how updates avoid breaking a running setup | [docs/UPGRADES.md](docs/UPGRADES.md) |
 | See what changed | [CHANGELOG.md](CHANGELOG.md) |
 
@@ -41,12 +42,24 @@ Full detail, including what to expect and what to do when something goes wrong, 
 - **Says what the pool is holding**, as opposed to what its drives are holding. A pooled drive can be
   full of files that were never pooled; the two figures are measured and shown separately, and the
   pool's ceiling is its own content plus the space actually free.
+- **Shares a pool on the network, and keeps the share in step with the mount.** Windows file
+  sharing (SMB) managed by the service: created when the pool is mounted, removed when it is not,
+  and back by itself after a restart, an update or a drive letter change. This is how Docker and
+  WSL2 reach a pool, since a container cannot use the drive letter — see
+  [docs/DOCKER.md](docs/DOCKER.md). Off until an account is named; MergePool never grants everyone,
+  never opens your firewall, and never touches a share it did not create.
 - **Controllable from a browser**, on a port you choose, if you want it: the same pool status and
   controls, served by the service on your own network. Off by default, access-token protected, and
   bound to the local machine until you say otherwise.
 - **Updates itself.** After the first install, new versions are downloaded, checksum-verified,
   unpacked beside the running one and switched to. Nothing is overwritten, your configuration and
   pooled files are never touched, and a version that does not come up healthy is rolled back.
+- **Answers under concurrent load, or says why it cannot.** Every wait in the file system path is
+  bounded and reports a timeout rather than blocking for ever; reads and writes of one handle are
+  safe on as many threads as there is traffic; and a pool whose I/O has stalled is remounted by the
+  service rather than left wedged. A drive the pool cannot currently read makes its view
+  *incomplete*, and an incomplete view refuses to answer "that folder is empty" or "that file is not
+  here" — a drive that is slow to answer must never look like deleted data.
 - **Never splits a file.** Each file lives whole on one drive; folders may span drives. Renames and
   moves stay on the drive the file is already on, so they are instant.
 - **Survives a drive going away.** Drives are identified by volume GUID, so letters can move. A
@@ -57,6 +70,13 @@ Full detail, including what to expect and what to do when something goes wrong, 
   drive that is overheating — until they recover.
 - **Evens itself out in the background.** A low-priority, pausable rebalancer moves files off the
   fullest drives, skipping anything in use and capping its own bandwidth.
+- **Explains itself, and hides nothing.** Every button, switch and slider in the window says what it
+  does, what moving it costs, and the value it ships with; the ones you have changed are marked, and
+  each has its own way back. An **Advanced** switch in the title bar reveals every tunable the engine
+  has — placement scoring, slow-drive detection, how drives are measured, rebalance thresholds, copy
+  pacing — rather than leaving them reachable only by hand-editing `config.json`. A value that would
+  stop the engine working is brought into range by the service and shown as stored, so the window
+  never claims a setting it is not using.
 
 ## Updates never break a running setup
 
@@ -85,16 +105,16 @@ See [docs/UPGRADES.md](docs/UPGRADES.md).
 | `src/MergePool.Ui` | WPF front end | Windows |
 | `src/MergePool.Updater` | Upgrade CLI | Windows |
 | `src/MergePool.Web` | Optional web interface: HTTP server, JSON API, single-page app | any OS |
-| `tests/` | 323 tests, all runnable on any OS | any OS |
+| `tests/` | 441 tests, all runnable on any OS | any OS |
 | `installer/` | Inno Setup script and the publish + package script | Windows |
 
 ## Status
 
-Version 0.4.1. All six milestones are in — core pool library, WinFsp mount, placement and throttle
+Version 0.11.0. All six milestones are in — core pool library, WinFsp mount, placement and throttle
 engine, service and IPC, WPF UI, installer and updater — plus growing and shrinking a live pool,
 measured pool usage, and updating itself from the release feed.
 
-323 tests pass on Linux and Windows. CI compiles the full Windows solution against a real WinFsp
+441 tests pass on Linux and Windows. CI compiles the full Windows solution against a real WinFsp
 install and builds the installer, so a `[Code]` change that will not compile fails there rather than
 on a user's machine.
 

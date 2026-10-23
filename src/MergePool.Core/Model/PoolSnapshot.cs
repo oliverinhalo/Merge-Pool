@@ -25,6 +25,32 @@ public sealed record PoolSnapshot
 
     public IEnumerable<PoolPart> WritableParts => Parts.Where(static p => p.AcceptsNewFiles);
 
+    /// <summary>Parts we currently cannot read and whose content we therefore cannot account for.</summary>
+    public IEnumerable<PoolPart> UnavailableParts => Parts.Where(static p => !p.IsPresenceKnown);
+
+    /// <summary>
+    /// Whether this view accounts for every configured drive. False means at least one drive could
+    /// not be reached, so what the merged view does <em>not</em> contain proves nothing.
+    /// </summary>
+    /// <remarks>
+    /// The file system refuses listings and "no such file" answers from an incomplete view rather
+    /// than serving them as fact. A drive that is genuinely gone makes the pool degraded, not
+    /// incomplete, and degraded answers are served normally — losing a drive is a supported state;
+    /// quietly hiding the files on a drive that is merely slow to answer is not.
+    /// </remarks>
+    public bool IsComplete => Parts.All(static p => p.IsPresenceKnown);
+
+    /// <summary>A topology we have not managed to resolve. Every answer from it is "not ready".</summary>
+    public static PoolSnapshot Unknown { get; } = new()
+    {
+        PoolId = Guid.Empty,
+        Parts = [],
+        IsResolved = false,
+    };
+
+    /// <summary>False only for <see cref="Unknown"/>: no resolve has succeeded yet.</summary>
+    public bool IsResolved { get; init; } = true;
+
     public PoolHealth Health =>
         Parts.Count == 0 || Parts.All(static p => !p.IsOnline) ? PoolHealth.Offline
         : Parts.Any(static p => !p.IsOnline) ? PoolHealth.Degraded

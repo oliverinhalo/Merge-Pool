@@ -4,6 +4,7 @@ using System.IO;
 using MergePool.Core.Config;
 using MergePool.Ipc.Protocol;
 using MergePool.Ui.Services;
+using MergePool.Ui.ViewModels.Settings;
 
 namespace MergePool.Ui.ViewModels;
 
@@ -119,6 +120,11 @@ public sealed class DuplicationViewModel : ViewModelBase
     private bool _busy;
     private ProtectedFolderViewModel? _selected;
     private Guid _editing;
+    private bool _showAdvanced;
+    private NumericSetting _copyRate = null!;
+    private NumericSetting _scanInterval = null!;
+    private NumericSetting _copyHeadroom = null!;
+    private ToggleSetting _pauseWhileBusy = null!;
 
     public DuplicationViewModel(ServiceConnection service, Func<CancellationToken> token)
     {
@@ -131,6 +137,29 @@ public sealed class DuplicationViewModel : ViewModelBase
         RunNowCommand = new AsyncCommand(RunNowAsync, () => !_busy && HasPool);
         RemoveCommand = new AsyncCommand(RemoveSelectedAsync, () => !_busy && Selected is not null);
         TogglePauseCommand = new AsyncCommand(ToggleSelectedAsync, () => !_busy && Selected is not null);
+
+        Advanced = BuildAdvanced();
+        Advanced.ApplyAdvanced(advanced: false);
+    }
+
+    /// <summary>
+    /// How copying itself behaves: how fast it may go, how often it looks, how much room it leaves
+    /// and whether it gives way to real work. Which folders are protected, and how many copies they
+    /// keep, is the rest of this tab — these four are about the machinery.
+    /// </summary>
+    public SettingGroup Advanced { get; }
+
+    /// <summary>Set from the window's Advanced toggle.</summary>
+    public bool ShowAdvanced
+    {
+        get => _showAdvanced;
+        set
+        {
+            if (Set(ref _showAdvanced, value))
+            {
+                Advanced.ApplyAdvanced(value);
+            }
+        }
     }
 
     public AsyncCommand AddCommand { get; }
@@ -381,7 +410,102 @@ public sealed class DuplicationViewModel : ViewModelBase
         }
 
         Selected = Folders.FirstOrDefault(f => f.Id == selectedId) ?? Folders.FirstOrDefault();
+
+        if (state is not null)
+        {
+            _copyRate.Load(state.MaxBytesPerSecond / (double)(1024 * 1024));
+            _scanInterval.Load(state.ScanIntervalMinutes);
+            _copyHeadroom.Load(state.CopyHeadroomBytes / (double)(1024 * 1024));
+            _pauseWhileBusy.Load(state.PauseWhileBusy);
+            Advanced.Refresh();
+        }
+
         RaiseAll();
+    }
+
+    private SettingGroup BuildAdvanced()
+    {
+        _copyRate = new NumericSetting(
+            "Fastest it may copy",
+            "A ceiling on what making copies reads and writes. Copying happens in the background, "
+            + "a file at a time, and a file something has open is left for the next sweep.",
+            "Low keeps copying invisible and means a newly protected folder takes longer to be "
+            + "safe. High gets there sooner and is noticeable on the drives while it does.",
+            minimum: 1,
+            maximum: 500,
+            step: 1,
+            defaultValue: 32,
+            SettingFormats.Rate,
+            value => string.Create(
+                CultureInfo.CurrentCulture,
+                $"Copying moves at most {value:N0} MB/s."),
+            value => _ = ApplyOptionsAsync(new DuplicationOptionsDto
+            {
+                MaxBytesPerSecond = (long)Math.Round(value * 1024 * 1024),
+            }),
+            advanced: true);
+
+        _scanInterval = new NumericSetting(
+            "How often it checks the protected folders",
+            "How long MergePool waits between sweeps of your protected folders, looking for files "
+            + "with too few copies, copies that are out of date, and copies no rule asks for any more.",
+            "Often means a new file is protected within minutes, at the cost of walking those "
+            + "folders that often. Rarely is lighter on the drives and leaves a new file "
+            + "unprotected for longer — Check now sweeps immediately whatever this says.",
+            minimum: 1,
+            maximum: 1440,
+            step: 1,
+            defaultValue: 15,
+            SettingFormats.Minutes,
+            value => string.Create(
+                CultureInfo.CurrentCulture,
+                $"The protected folders are checked over every {SettingFormats.Minutes(value)}."),
+            value => _ = ApplyOptionsAsync(new DuplicationOptionsDto { ScanIntervalMinutes = value }),
+            advanced: true);
+
+        _copyHeadroom = new NumericSetting(
+            "Room left after a copy lands",
+            "Free space a drive must still have once a copy has been written to it. A drive that "
+            + "would be left with less than this is not chosen to hold the copy.",
+            "Raising it keeps the drives from being filled to the brim by copies. Lowering it lets "
+            + "copies use almost all of a drive, which gets a folder protected on a nearly full "
+            + "pool and leaves the drives with nothing spare.",
+            minimum: 0,
+            maximum: 8192,
+            step: 64,
+            defaultValue: 256,
+            SettingFormats.Megabytes,
+            value => value <= 0
+                ? "A copy may fill a drive completely."
+                : string.Create(
+                    CultureInfo.CurrentCulture,
+                    $"A drive keeps at least {SettingFormats.Megabytes(value)} free after a copy lands on it."),
+            value => _ = ApplyOptionsAsync(new DuplicationOptionsDto
+            {
+                CopyHeadroomBytes = (long)Math.Round(value * 1024 * 1024),
+            }),
+            advanced: true);
+
+        _pauseWhileBusy = new ToggleSetting(
+            "Give way to whatever else is using the drives",
+            "Whether copying stops while the pool is serving real IO and carries on when it goes "
+            + "quiet.",
+            "On, you should never notice it; protection simply arrives later. Off, copying competes "
+            + "with whatever you are doing and finishes sooner.",
+            defaultValue: true,
+            "On: copying pauses while the pool is busy and resumes when it is quiet.",
+            "Off: copying keeps going even while the pool is in use.",
+            value => _ = ApplyOptionsAsync(new DuplicationOptionsDto { PauseWhileBusy = value }),
+            advanced: true);
+
+        return new SettingGroup(
+            "Copying",
+            "How the copying itself is paced.",
+            advanced: true,
+            _copyRate,
+            _scanInterval,
+            _copyHeadroom,
+            _pauseWhileBusy);
     }
 
     private void RaiseAll()

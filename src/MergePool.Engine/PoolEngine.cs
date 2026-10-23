@@ -58,6 +58,14 @@ public sealed record PoolEngineOptions
 
     /// <summary>How long a measured part size is trusted before it is walked again.</summary>
     public TimeSpan? UsageMeasurementTtl { get; init; }
+
+    /// <summary>
+    /// How long a drive that has stopped answering counts as unreachable rather than gone. While
+    /// it is unreachable the pool refuses listings and "no such file" answers instead of serving
+    /// them as fact — see <see cref="PoolPartState.Unavailable"/>. Zero reports a drive as offline
+    /// the moment it is missed, which is what the tests of steady-state degraded service want.
+    /// </summary>
+    public TimeSpan? PresenceGracePeriod { get; init; }
 }
 
 /// <summary>
@@ -88,7 +96,10 @@ public sealed class PoolEngine : IDisposable
         _mounts = options.MountService;
         _timeProvider = options.TimeProvider ?? TimeProvider.System;
         UsageMeter = new PartUsageMeter(options.UsageMeasurementTtl, _timeProvider);
-        _partManager = new PoolPartManager(_volumes, _timeProvider, UsageMeter);
+        _partManager = new PoolPartManager(_volumes, _timeProvider, UsageMeter)
+        {
+            PresenceGracePeriod = options.PresenceGracePeriod ?? TimeSpan.FromSeconds(30),
+        };
         _relocator = new FileRelocator(options.SecurityCopier);
 
         var load = _configStore.Load();
@@ -561,6 +572,26 @@ public sealed class PoolEngine : IDisposable
 
     public void Unmount(Guid poolId) => _mounts.Unmount(poolId);
 
+    /// <summary>
+    /// Takes a pool's mount down and brings it straight back up at the same place.
+    /// </summary>
+    /// <remarks>
+    /// The recovery path for a mount that has stopped answering: it returns WinFsp's dispatcher
+    /// state to a known good one, which nothing short of a remount does. Pool data is not involved
+    /// — every file stays exactly where it is on its own drive — but open handles on the pool do
+    /// break, so this is for the watchdog and for someone clicking it deliberately, not for
+    /// routine upkeep.
+    /// </remarks>
+    public void Remount(Guid poolId)
+    {
+        var runtime = FindPool(poolId) ?? throw new KeyNotFoundException($"No pool {poolId:D}.");
+        var mountPoint = _mounts.GetMountPoint(poolId) ?? runtime.Definition.MountPoint;
+
+        _mounts.Unmount(poolId);
+        runtime.Invalidate();
+        Mount(poolId, string.IsNullOrWhiteSpace(mountPoint) ? null : mountPoint);
+    }
+
     public bool IsMounted(Guid poolId) => _mounts.IsMounted(poolId);
 
     public string? GetMountPoint(Guid poolId) => _mounts.GetMountPoint(poolId);
@@ -762,6 +793,24 @@ public sealed class PoolEngine : IDisposable
         }
     }
 
+    /// <summary>
+    /// Changes a pool's network share settings and persists them. The share itself is created and
+    /// removed by the service, which reconciles it against the mount on every tick.
+    /// </summary>
+    public void UpdatePoolShare(Guid poolId, Action<Core.Sharing.PoolShareOptions> update)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+
+        lock (_gate)
+        {
+            var definition = _config.Pools.FirstOrDefault(pool => pool.Id == poolId)
+                ?? throw new KeyNotFoundException($"No pool {poolId:D}.");
+
+            update(definition.Share);
+            _configStore.Save(_config);
+        }
+    }
+
     /// <summary>Applies update preferences and persists them, preserving unknown config fields.</summary>
     public void UpdateUpdateOptions(Action<UpdateOptions> update)
     {
@@ -838,6 +887,14 @@ public sealed class PoolEngine : IDisposable
 
     private PoolRuntime CreateRuntime(PoolDefinition definition) =>
         new(definition, _partManager, _config.Placement, Metrics, _relocator, _timeProvider, _config.Duplication);
+
+    /// <summary>
+    /// The I/O health of every mounted pool, for the service watchdog and the health check. A pool
+    /// whose callbacks have stopped completing reports here; nothing else notices, because the
+    /// named pipe this question arrives on is served by a different thread entirely.
+    /// </summary>
+    public IReadOnlyList<(Guid PoolId, string Name, Core.Health.IoHealthMonitor Health)> IoHealth =>
+        [.. Pools.Select(runtime => (runtime.PoolId, runtime.Definition.Name, runtime.Health))];
 
     public void Dispose()
     {

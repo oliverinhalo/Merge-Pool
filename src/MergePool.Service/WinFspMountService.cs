@@ -1,6 +1,7 @@
 using System.Runtime.Versioning;
 using MergePool.Core.FileSystem;
 using MergePool.Engine;
+using MergePool.Core.Volumes;
 using MergePool.Fs.WinFsp;
 using Microsoft.Extensions.Logging;
 
@@ -35,6 +36,10 @@ public sealed class WinFspMountService(ILogger<WinFspMountService> logger) : IPo
             _mounters[options.PoolId] = mounter;
         }
 
+        // Volume enumeration must not describe this mount: the query would come straight back into
+        // our own callbacks. See OwnMountRegistry.
+        OwnMountRegistry.Shared.Register(options.MountPoint);
+
         logger.LogInformation(
             "Mounted pool {PoolId} at {MountPoint}.", options.PoolId, options.MountPoint);
     }
@@ -50,7 +55,10 @@ public sealed class WinFspMountService(ILogger<WinFspMountService> logger) : IPo
             }
         }
 
+        var mountPoint = mounter.MountPoint;
         mounter.Dispose();
+        OwnMountRegistry.Shared.Unregister(mountPoint);
+
         logger.LogInformation("Unmounted pool {PoolId}.", poolId);
     }
 

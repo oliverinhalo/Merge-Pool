@@ -13,7 +13,7 @@
 #ifndef AppVersion
   ; build.ps1 passes /DAppVersion from Directory.Build.props. This is only the fallback for
   ; compiling the script straight from the Inno Setup IDE.
-  #define AppVersion "0.8.0"
+  #define AppVersion "0.11.0"
 #endif
 #define AppGuid "{6F0B2A1C-4E9D-4E6A-9E4F-3D1F1D4E7C21}"
 #define ServiceName "MergePool"

@@ -366,6 +366,10 @@ public sealed class UpdateStatusResult : IpcContract
     [JsonPropertyName("checkIntervalHours")]
     public double CheckIntervalHours { get; set; }
 
+    /// <summary>Whether pre-releases are offered as well as stable versions. Protocol 6.</summary>
+    [JsonPropertyName("includePrereleases")]
+    public bool IncludePrereleases { get; set; }
+
     /// <summary>Versions on disk. An upgrade only repoints which one is active.</summary>
     [JsonPropertyName("installedVersions")]
     public List<string> InstalledVersions { get; set; } = [];
@@ -382,6 +386,10 @@ public sealed class UpdateSettingsDto : IpcContract
 
     [JsonPropertyName("checkIntervalHours")]
     public double? CheckIntervalHours { get; set; }
+
+    /// <summary>Offer pre-release versions as well as stable ones. Protocol 6.</summary>
+    [JsonPropertyName("includePrereleases")]
+    public bool? IncludePrereleases { get; set; }
 }
 
 /// <summary>The web interface's settings and what it is actually doing. Protocol 4.</summary>
@@ -556,6 +564,46 @@ public sealed class HealthCheckResult : IpcContract
 
     [JsonPropertyName("problems")]
     public List<string> Problems { get; set; } = [];
+
+    /// <summary>
+    /// What each pool's I/O is doing right now. Protocol 7: the configuration check above cannot
+    /// see a mount that has stopped answering — the pipe this reply comes down is served by a
+    /// different thread, so the service looks perfectly healthy while the pool is wedged.
+    /// </summary>
+    [JsonPropertyName("io")]
+    public List<PoolIoHealthDto> Io { get; set; } = [];
+}
+
+/// <summary>One pool's I/O health. Protocol 7.</summary>
+public sealed class PoolIoHealthDto : IpcContract
+{
+    [JsonPropertyName("poolId")]
+    public Guid PoolId { get; set; }
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>One of Unknown, Healthy, Slow, Stalled.</summary>
+    [JsonPropertyName("state")]
+    public string State { get; set; } = "Unknown";
+
+    /// <summary>One line saying what the pool's I/O is doing and why we say so.</summary>
+    [JsonPropertyName("summary")]
+    public string Summary { get; set; } = string.Empty;
+
+    /// <summary>Seconds the pool has been stalled, when it is.</summary>
+    [JsonPropertyName("stalledSeconds")]
+    public double? StalledSeconds { get; set; }
+
+    [JsonPropertyName("stalls")]
+    public long Stalls { get; set; }
+
+    [JsonPropertyName("failures")]
+    public long Failures { get; set; }
+
+    /// <summary>The most recent faults, newest last, for the window and the log.</summary>
+    [JsonPropertyName("recentFaults")]
+    public List<string> RecentFaults { get; set; } = [];
 }
 
 public sealed class MountRequest : IpcContract
@@ -566,6 +614,72 @@ public sealed class MountRequest : IpcContract
     /// <summary>Overrides the configured mount point for this mount only.</summary>
     [JsonPropertyName("mountPoint")]
     public string? MountPoint { get; set; }
+}
+
+/// <summary>
+/// Whether a pool is shared on the network over SMB, and what that share is doing. Protocol 8.
+/// </summary>
+public sealed class PoolShareDto : IpcContract
+{
+    [JsonPropertyName("poolId")]
+    public Guid PoolId { get; set; }
+
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; set; }
+
+    /// <summary>The share name. Empty means one derived from the pool's name.</summary>
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("readOnly")]
+    public bool ReadOnly { get; set; }
+
+    /// <summary>Windows accounts allowed to connect. No share is created without at least one.</summary>
+    [JsonPropertyName("allowedAccounts")]
+    public List<string> AllowedAccounts { get; set; } = [];
+
+    /// <summary>Whether the share exists right now.</summary>
+    [JsonPropertyName("isShared")]
+    public bool IsShared { get; set; }
+
+    /// <summary>What to point a client at, once it exists.</summary>
+    [JsonPropertyName("uncPath")]
+    public string? UncPath { get; set; }
+
+    /// <summary>Why it is not shared, when it should be.</summary>
+    [JsonPropertyName("problem")]
+    public string? Problem { get; set; }
+
+    /// <summary>
+    /// Whether Windows' File and Printer Sharing rules are on. Null when it could not be read.
+    /// Without them the share exists and nothing on the network can reach it.
+    /// </summary>
+    [JsonPropertyName("fileSharingEnabled")]
+    public bool? FileSharingEnabled { get; set; }
+
+    /// <summary>A ready-to-paste command for the way containers should mount this. Protocol 8.</summary>
+    [JsonPropertyName("dockerVolumeCommand")]
+    public string? DockerVolumeCommand { get; set; }
+}
+
+/// <summary>Changing a pool's share settings. Absent fields are left as they are. Protocol 8.</summary>
+public sealed class PoolShareRequest : IpcContract
+{
+    [JsonPropertyName("poolId")]
+    public Guid PoolId { get; set; }
+
+    [JsonPropertyName("enabled")]
+    public bool? Enabled { get; set; }
+
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("readOnly")]
+    public bool? ReadOnly { get; set; }
+
+    /// <summary>Replaces the account list outright when present.</summary>
+    [JsonPropertyName("allowedAccounts")]
+    public List<string>? AllowedAccounts { get; set; }
 }
 
 /// <summary>Placement tuning the UI can change at runtime. Absent fields are left as they are.</summary>
@@ -594,6 +708,83 @@ public sealed class PlacementSettingsDto : IpcContract
 
     [JsonPropertyName("rebalanceMaxBytesPerSecond")]
     public long? RebalanceMaxBytesPerSecond { get; set; }
+
+    // ----- Protocol 6: the tunables behind the Advanced toggle. -----
+    // Every one of these was already in the config file and reachable only by hand-editing it. They
+    // are nullable like the rest, so a build that does not know about one leaves it alone, and the
+    // service clamps each to a range that cannot wedge the engine before storing it.
+
+    /// <summary>Free space left over beyond the file's own size when a drive is chosen for it.</summary>
+    [JsonPropertyName("writeHeadroomBytes")]
+    public long? WriteHeadroomBytes { get; set; }
+
+    /// <summary>Write latency above this multiple of a drive's own normal latency also parks it.</summary>
+    [JsonPropertyName("latencyThrottleRatio")]
+    public double? LatencyThrottleRatio { get; set; }
+
+    /// <summary>Bad samples in a row before a drive is parked.</summary>
+    [JsonPropertyName("throttleEnterSamples")]
+    public int? ThrottleEnterSamples { get; set; }
+
+    /// <summary>Good samples in a row before a parked drive is used again.</summary>
+    [JsonPropertyName("throttleExitSamples")]
+    public int? ThrottleExitSamples { get; set; }
+
+    /// <summary>Samples a drive must have before it can be called slow at all.</summary>
+    [JsonPropertyName("minSamplesForThrottleDetection")]
+    public int? MinSamplesForThrottleDetection { get; set; }
+
+    /// <summary>How quickly the current-speed figure follows the newest sample.</summary>
+    [JsonPropertyName("ewmaAlpha")]
+    public double? EwmaAlpha { get; set; }
+
+    /// <summary>How quickly a drive's "normal speed" baseline drifts downwards.</summary>
+    [JsonPropertyName("baselineAlpha")]
+    public double? BaselineAlpha { get; set; }
+
+    /// <summary>How quickly that baseline follows a sample better than itself.</summary>
+    [JsonPropertyName("baselineRiseAlpha")]
+    public double? BaselineRiseAlpha { get; set; }
+
+    /// <summary>The throughput counted as a speed factor of 1.0.</summary>
+    [JsonPropertyName("referenceThroughputBytesPerSecond")]
+    public double? ReferenceThroughputBytesPerSecond { get; set; }
+
+    /// <summary>Floor on a measured speed factor, so one bad patch cannot exile a drive.</summary>
+    [JsonPropertyName("minSpeedFactor")]
+    public double? MinSpeedFactor { get; set; }
+
+    /// <summary>Ceiling on a measured speed factor, so one fast burst cannot monopolise a drive.</summary>
+    [JsonPropertyName("maxSpeedFactor")]
+    public double? MaxSpeedFactor { get; set; }
+
+    /// <summary>Writes smaller than this say nothing about throughput and only feed latency.</summary>
+    [JsonPropertyName("minThroughputSampleBytes")]
+    public long? MinThroughputSampleBytes { get; set; }
+
+    /// <summary>How long a drive may sit idle before it is measured with a small probe write.</summary>
+    [JsonPropertyName("idleProbeIntervalSeconds")]
+    public double? IdleProbeIntervalSeconds { get; set; }
+
+    /// <summary>The size of that probe write.</summary>
+    [JsonPropertyName("idleProbeBytes")]
+    public int? IdleProbeBytes { get; set; }
+
+    /// <summary>Rebalancing starts once the fullest and emptiest drive differ by more than this.</summary>
+    [JsonPropertyName("rebalanceTriggerImbalance")]
+    public double? RebalanceTriggerImbalance { get; set; }
+
+    /// <summary>Rebalancing stops once the gap is back under this.</summary>
+    [JsonPropertyName("rebalanceTargetImbalance")]
+    public double? RebalanceTargetImbalance { get; set; }
+
+    /// <summary>The largest single file the rebalancer will move.</summary>
+    [JsonPropertyName("rebalanceMaxFileBytes")]
+    public long? RebalanceMaxFileBytes { get; set; }
+
+    /// <summary>Hold rebalancing off while the pool is busy, and carry on when it goes quiet.</summary>
+    [JsonPropertyName("rebalancePauseWhileBusy")]
+    public bool? RebalancePauseWhileBusy { get; set; }
 }
 
 /// <summary>One protected folder as the wire describes it. Protocol 5.</summary>
@@ -677,6 +868,14 @@ public sealed class DuplicationResult : IpcContract
     [JsonPropertyName("scanIntervalMinutes")]
     public double ScanIntervalMinutes { get; set; }
 
+    /// <summary>Free space left on a drive after a copy has landed on it. Protocol 6.</summary>
+    [JsonPropertyName("copyHeadroomBytes")]
+    public long CopyHeadroomBytes { get; set; }
+
+    /// <summary>Whether copying gives way to real IO. Protocol 6.</summary>
+    [JsonPropertyName("pauseWhileBusy")]
+    public bool PauseWhileBusy { get; set; } = true;
+
     [JsonPropertyName("rules")]
     public List<DuplicationRuleDto> Rules { get; set; } = [];
 
@@ -705,6 +904,14 @@ public sealed class DuplicationOptionsDto : IpcContract
 
     [JsonPropertyName("scanIntervalMinutes")]
     public double? ScanIntervalMinutes { get; set; }
+
+    /// <summary>Free space left on a drive after a copy has landed on it. Protocol 6.</summary>
+    [JsonPropertyName("copyHeadroomBytes")]
+    public long? CopyHeadroomBytes { get; set; }
+
+    /// <summary>Hold copying off while the pool is busy, and carry on when it goes quiet. Protocol 6.</summary>
+    [JsonPropertyName("pauseWhileBusy")]
+    public bool? PauseWhileBusy { get; set; }
 }
 
 /// <summary>What one duplication pass did. Protocol 5.</summary>

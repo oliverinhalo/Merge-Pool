@@ -8,8 +8,15 @@ namespace MergePool.Core.Volumes;
 /// Enumerates real Windows volumes by volume GUID. Drive letters are read for display only.
 /// </summary>
 [SupportedOSPlatform("windows")]
-public sealed class WindowsVolumeProvider : IVolumeProvider
+public sealed class WindowsVolumeProvider(OwnMountRegistry? ownMounts = null) : IVolumeProvider
 {
+    /// <summary>
+    /// The pool's own mounts, which are skipped rather than described. Asking Windows about our own
+    /// volume sends the question back into our own file system callbacks; see
+    /// <see cref="OwnMountRegistry"/> for what that used to cost.
+    /// </summary>
+    private readonly OwnMountRegistry _ownMounts = ownMounts ?? OwnMountRegistry.Shared;
+
     public IReadOnlyList<VolumeInfo> GetVolumes()
     {
         var volumes = new List<VolumeInfo>();
@@ -35,7 +42,11 @@ public sealed class WindowsVolumeProvider : IVolumeProvider
                 {
                     if (VolumeId.TryParse(volumeName, out var id))
                     {
-                        volumes.Add(Describe(id, volumeName));
+                        var described = Describe(id, volumeName, _ownMounts);
+                        if (described is not null)
+                        {
+                            volumes.Add(described);
+                        }
                     }
                 }
                 catch (Exception exception) when (exception is IOException
@@ -60,9 +71,23 @@ public sealed class WindowsVolumeProvider : IVolumeProvider
 
     public VolumeInfo? TryGetVolume(VolumeId id) => GetVolumes().FirstOrDefault(v => v.Id == id);
 
-    private static VolumeInfo Describe(VolumeId id, string volumeName)
+    /// <summary>
+    /// Describes one volume, or returns <c>null</c> for a volume that is one of our own mounts.
+    /// </summary>
+    /// <remarks>
+    /// The mount-point lookup is cheap and local; everything after it — drive type, label, file
+    /// system, size, free space — is a round trip to the device. For our own mount that round trip
+    /// goes back into our own callbacks, so it is never made.
+    /// </remarks>
+    private static VolumeInfo? Describe(VolumeId id, string volumeName, OwnMountRegistry ownMounts)
     {
         var root = GetFirstMountPoint(volumeName);
+
+        if (ownMounts.IsOwnMount(root))
+        {
+            return null;
+        }
+
         var kind = VolumeKind.Unknown;
         var label = string.Empty;
         var fileSystem = string.Empty;
