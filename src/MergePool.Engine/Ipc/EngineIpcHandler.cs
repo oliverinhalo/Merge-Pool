@@ -17,7 +17,8 @@ namespace MergePool.Engine.Ipc;
 public sealed class EngineIpcHandler(
     PoolEngine engine,
     AutoUpdateService? updates = null,
-    Func<WebInterfaceResult>? webStatus = null) : IIpcMethodHandler
+    Func<WebInterfaceResult>? webStatus = null,
+    Func<IReadOnlyDictionary<Guid, Core.Sharing.PoolShareStatus>>? shareStatus = null) : IIpcMethodHandler
 {
     private readonly PoolEngine _engine = engine ?? throw new ArgumentNullException(nameof(engine));
 
@@ -64,6 +65,8 @@ public sealed class EngineIpcHandler(
         IpcMethods.DuplicationRemoveRule,
         IpcMethods.DuplicationSetOptions,
         IpcMethods.DuplicationRunNow,
+        IpcMethods.ShareGet,
+        IpcMethods.ShareSet,
         IpcMethods.HealthCheck,
     ];
 
@@ -123,6 +126,8 @@ public sealed class EngineIpcHandler(
                 IpcMethods.DuplicationRemoveRule => RemoveDuplicationRule(call),
                 IpcMethods.DuplicationSetOptions => SetDuplicationOptions(call),
                 IpcMethods.DuplicationRunNow => await RunDuplicationAsync(call, cancellationToken).ConfigureAwait(false),
+                IpcMethods.ShareGet => Ok(id, Share(PoolIdOf(call))),
+                IpcMethods.ShareSet => SetShare(call),
                 IpcMethods.HealthCheck => Ok(id, HealthCheck()),
                 _ => IpcResponse.Failure(id, IpcErrorCodes.MethodNotSupported, $"'{call.Request.Method}' is unknown."),
             };
@@ -400,6 +405,7 @@ public sealed class EngineIpcHandler(
                 AutomaticChecks = options.AutomaticChecks,
                 AutomaticInstall = options.AutomaticInstall,
                 CheckIntervalHours = options.CheckIntervalHours,
+                IncludePrereleases = options.IncludePrereleases,
             };
         }
 
@@ -420,6 +426,7 @@ public sealed class EngineIpcHandler(
             AutomaticChecks = options.AutomaticChecks,
             AutomaticInstall = options.AutomaticInstall,
             CheckIntervalHours = options.CheckIntervalHours,
+            IncludePrereleases = options.IncludePrereleases,
             InstalledVersions = [.. state.InstalledVersions],
         };
     }
@@ -549,6 +556,8 @@ public sealed class EngineIpcHandler(
             Enabled = settings.Enabled,
             MaxBytesPerSecond = settings.MaxBytesPerSecond,
             ScanIntervalMinutes = settings.ScanIntervalMinutes,
+            CopyHeadroomBytes = settings.CopyHeadroomBytes,
+            PauseWhileBusy = settings.PauseWhileBusy,
             Rules = rules,
             CopiesToAdd = plan.CopiesToAdd,
             CopiesToRefresh = plan.CopiesToRefresh,
@@ -642,6 +651,9 @@ public sealed class EngineIpcHandler(
             settings.Enabled = request.Enabled ?? settings.Enabled;
             settings.MaxBytesPerSecond = request.MaxBytesPerSecond ?? settings.MaxBytesPerSecond;
             settings.ScanIntervalMinutes = request.ScanIntervalMinutes ?? settings.ScanIntervalMinutes;
+            settings.CopyHeadroomBytes = request.CopyHeadroomBytes ?? settings.CopyHeadroomBytes;
+            settings.PauseWhileBusy = request.PauseWhileBusy ?? settings.PauseWhileBusy;
+            settings.Clamped();
         });
 
         return Ok(call.Request.Id, new DuplicationResult
@@ -649,6 +661,8 @@ public sealed class EngineIpcHandler(
             Enabled = _engine.Config.Duplication.Enabled,
             MaxBytesPerSecond = _engine.Config.Duplication.MaxBytesPerSecond,
             ScanIntervalMinutes = _engine.Config.Duplication.ScanIntervalMinutes,
+            CopyHeadroomBytes = _engine.Config.Duplication.CopyHeadroomBytes,
+            PauseWhileBusy = _engine.Config.Duplication.PauseWhileBusy,
         });
     }
 
@@ -686,6 +700,8 @@ public sealed class EngineIpcHandler(
             options.AutomaticChecks = request.AutomaticChecks ?? options.AutomaticChecks;
             options.AutomaticInstall = request.AutomaticInstall ?? options.AutomaticInstall;
             options.CheckIntervalHours = request.CheckIntervalHours ?? options.CheckIntervalHours;
+            options.IncludePrereleases = request.IncludePrereleases ?? options.IncludePrereleases;
+            options.Clamped();
         });
 
         return Ok(call.Request.Id, UpdateStatus());
@@ -816,6 +832,26 @@ public sealed class EngineIpcHandler(
             ThrottleCooldownSeconds = placement.ThrottleCooldownSeconds,
             RebalanceEnabled = placement.Rebalance.Enabled,
             RebalanceMaxBytesPerSecond = placement.Rebalance.MaxBytesPerSecond,
+
+            // Protocol 6: the expert tunables. An older UI ignores what it does not know about.
+            WriteHeadroomBytes = placement.WriteHeadroomBytes,
+            LatencyThrottleRatio = placement.LatencyThrottleRatio,
+            ThrottleEnterSamples = placement.ThrottleEnterSamples,
+            ThrottleExitSamples = placement.ThrottleExitSamples,
+            MinSamplesForThrottleDetection = placement.MinSamplesForThrottleDetection,
+            EwmaAlpha = placement.EwmaAlpha,
+            BaselineAlpha = placement.BaselineAlpha,
+            BaselineRiseAlpha = placement.BaselineRiseAlpha,
+            ReferenceThroughputBytesPerSecond = placement.ReferenceThroughputBytesPerSecond,
+            MinSpeedFactor = placement.MinSpeedFactor,
+            MaxSpeedFactor = placement.MaxSpeedFactor,
+            MinThroughputSampleBytes = placement.MinThroughputSampleBytes,
+            IdleProbeIntervalSeconds = placement.IdleProbeIntervalSeconds,
+            IdleProbeBytes = placement.IdleProbeBytes,
+            RebalanceTriggerImbalance = placement.Rebalance.TriggerImbalance,
+            RebalanceTargetImbalance = placement.Rebalance.TargetImbalance,
+            RebalanceMaxFileBytes = placement.Rebalance.MaxFileBytes,
+            RebalancePauseWhileBusy = placement.Rebalance.PauseWhileBusy,
         };
     }
 
@@ -836,6 +872,37 @@ public sealed class EngineIpcHandler(
             placement.Rebalance.Enabled = request.RebalanceEnabled ?? placement.Rebalance.Enabled;
             placement.Rebalance.MaxBytesPerSecond =
                 request.RebalanceMaxBytesPerSecond ?? placement.Rebalance.MaxBytesPerSecond;
+
+            placement.WriteHeadroomBytes = request.WriteHeadroomBytes ?? placement.WriteHeadroomBytes;
+            placement.LatencyThrottleRatio = request.LatencyThrottleRatio ?? placement.LatencyThrottleRatio;
+            placement.ThrottleEnterSamples = request.ThrottleEnterSamples ?? placement.ThrottleEnterSamples;
+            placement.ThrottleExitSamples = request.ThrottleExitSamples ?? placement.ThrottleExitSamples;
+            placement.MinSamplesForThrottleDetection =
+                request.MinSamplesForThrottleDetection ?? placement.MinSamplesForThrottleDetection;
+            placement.EwmaAlpha = request.EwmaAlpha ?? placement.EwmaAlpha;
+            placement.BaselineAlpha = request.BaselineAlpha ?? placement.BaselineAlpha;
+            placement.BaselineRiseAlpha = request.BaselineRiseAlpha ?? placement.BaselineRiseAlpha;
+            placement.ReferenceThroughputBytesPerSecond =
+                request.ReferenceThroughputBytesPerSecond ?? placement.ReferenceThroughputBytesPerSecond;
+            placement.MinSpeedFactor = request.MinSpeedFactor ?? placement.MinSpeedFactor;
+            placement.MaxSpeedFactor = request.MaxSpeedFactor ?? placement.MaxSpeedFactor;
+            placement.MinThroughputSampleBytes =
+                request.MinThroughputSampleBytes ?? placement.MinThroughputSampleBytes;
+            placement.IdleProbeIntervalSeconds =
+                request.IdleProbeIntervalSeconds ?? placement.IdleProbeIntervalSeconds;
+            placement.IdleProbeBytes = request.IdleProbeBytes ?? placement.IdleProbeBytes;
+            placement.Rebalance.TriggerImbalance =
+                request.RebalanceTriggerImbalance ?? placement.Rebalance.TriggerImbalance;
+            placement.Rebalance.TargetImbalance =
+                request.RebalanceTargetImbalance ?? placement.Rebalance.TargetImbalance;
+            placement.Rebalance.MaxFileBytes = request.RebalanceMaxFileBytes ?? placement.Rebalance.MaxFileBytes;
+            placement.Rebalance.PauseWhileBusy =
+                request.RebalancePauseWhileBusy ?? placement.Rebalance.PauseWhileBusy;
+
+            // A value the window could not have produced — a hand-edited config, or a build from
+            // before a limit existed — is brought into range here rather than defended against on
+            // every placement decision. What the window reads back is what the engine is using.
+            placement.Clamped();
         });
 
         return Ok(call.Request.Id, PlacementSettings());
@@ -918,13 +985,112 @@ public sealed class EngineIpcHandler(
         return Ok(call.Request.Id, ServiceStatus());
     }
 
+    /// <summary>What a pool's network share is set to, and what it is actually doing.</summary>
+    private PoolShareDto Share(Guid poolId)
+    {
+        var runtime = _engine.FindPool(poolId) ?? throw new KeyNotFoundException($"No pool {poolId:D}.");
+        var options = runtime.Definition.Share;
+        var status = shareStatus?.Invoke().GetValueOrDefault(poolId);
+
+        return new PoolShareDto
+        {
+            PoolId = poolId,
+            Enabled = options.Enabled,
+            Name = options.Name,
+            ReadOnly = options.ReadOnly,
+            AllowedAccounts = [.. options.AllowedAccounts],
+            IsShared = status?.IsShared ?? false,
+            UncPath = status?.UncPath,
+            Problem = status?.Problem ?? options.Problem(runtime.Definition.Name),
+            FileSharingEnabled = status?.FileSharingEnabled,
+            DockerVolumeCommand = DockerVolumeCommand(status?.UncPath, options.ReadOnly),
+        };
+    }
+
+    private IpcResponse SetShare(IpcCall call)
+    {
+        var request = call.PayloadAs<PoolShareRequest>();
+        var runtime = _engine.FindPool(request.PoolId)
+            ?? throw new KeyNotFoundException($"No pool {request.PoolId:D}.");
+
+        _engine.UpdatePoolShare(request.PoolId, share =>
+        {
+            share.Enabled = request.Enabled ?? share.Enabled;
+            share.Name = request.Name ?? share.Name;
+            share.ReadOnly = request.ReadOnly ?? share.ReadOnly;
+
+            if (request.AllowedAccounts is { } accounts)
+            {
+                share.AllowedAccounts = [.. accounts
+                    .Select(account => account.Trim())
+                    .Where(account => account.Length > 0)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)];
+            }
+        });
+
+        return Ok(call.Request.Id, Share(runtime.PoolId));
+    }
+
+    /// <summary>
+    /// The way a container should mount this share: a Docker named volume, which Docker
+    /// re-establishes every time a container starts, rather than a mount inside the docker-desktop
+    /// distro that its rebuilds take out from under you. See docs/DOCKER.md.
+    /// </summary>
+    private static string? DockerVolumeCommand(string? uncPath, bool readOnly)
+    {
+        if (string.IsNullOrWhiteSpace(uncPath))
+        {
+            return null;
+        }
+
+        // \\MACHINE\Share -> //host.docker.internal/Share, because a container reaches the host
+        // by that name rather than by the machine's own.
+        var share = uncPath.TrimStart('\\').Split('\\').LastOrDefault();
+        if (string.IsNullOrWhiteSpace(share))
+        {
+            return null;
+        }
+
+        var options = readOnly ? ",ro" : string.Empty;
+
+        return $"docker volume create pool-{share.ToLowerInvariant()} --driver local "
+            + "--opt type=cifs "
+            + $"--opt device=//host.docker.internal/{share} "
+            + "--opt o=addr=host.docker.internal,username=USER,password=PASSWORD,"
+            + $"vers=3.1.1,uid=1000,gid=1000,file_mode=0664,dir_mode=0775,nofail,soft{options}";
+    }
+
     private HealthCheckResult HealthCheck()
     {
         var problems = _engine.CheckHealth();
+
+        var io = _engine.IoHealth
+            .Select(pool => new PoolIoHealthDto
+            {
+                PoolId = pool.PoolId,
+                Name = pool.Name,
+                State = pool.Health.State.ToString(),
+                Summary = pool.Health.Describe(),
+                StalledSeconds = pool.Health.StalledFor?.TotalSeconds,
+                Stalls = pool.Health.Stalls,
+                Failures = pool.Health.Failures,
+                RecentFaults = [.. pool.Health.RecentFaults.TakeLast(5).Select(f => f.ToString())],
+            })
+            .ToList();
+
+        // A pool that has stopped answering is not a healthy service, whatever the configuration
+        // check says: that check reads config and resolves drives, and neither notices a mount
+        // whose callbacks are no longer completing.
+        var stalled = io
+            .Where(pool => pool.State == nameof(Core.Health.IoHealthState.Stalled))
+            .Select(pool => $"Pool '{pool.Name}' is not answering: {pool.Summary}")
+            .ToList();
+
         return new HealthCheckResult
         {
-            Healthy = problems.Count == 0,
-            Problems = [.. problems],
+            Healthy = problems.Count == 0 && stalled.Count == 0,
+            Problems = [.. problems, .. stalled],
+            Io = io,
         };
     }
 }

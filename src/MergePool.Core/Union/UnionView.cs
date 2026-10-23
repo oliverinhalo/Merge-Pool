@@ -167,15 +167,40 @@ public sealed class UnionView(IPoolTopology topology)
     public bool Exists(string poolPath) => Find(poolPath) is not null;
 
     /// <summary>Merged directory listing. Throws <see cref="DirectoryNotFoundException"/> if nothing holds it.</summary>
-    public IReadOnlyList<PoolEntry> EnumerateEntries(string poolPath, string searchPattern = "*")
+    public IReadOnlyList<PoolEntry> EnumerateEntries(string poolPath, string searchPattern = "*") =>
+        List(poolPath, searchPattern).Entries;
+
+    /// <summary>
+    /// Merged directory listing, with whether it can be trusted to be the whole of it.
+    /// </summary>
+    /// <remarks>
+    /// The completeness flag is the point of this method. A listing assembled while one of the
+    /// pool's drives could not be read is not a listing of the folder — it is a listing of the part
+    /// of the folder we could see. Served as fact, it reads to an application as "these files have
+    /// been deleted", which is how a healthy pool with every byte still on disk caused a scare. The
+    /// file system refuses an incomplete listing instead.
+    /// </remarks>
+    public PoolListing List(string poolPath, string searchPattern = "*")
     {
         var normalized = PoolPath.Normalize(poolPath);
+        var snapshot = _topology.Current;
         var sources = FindAllDirectories(normalized);
+
         if (sources.Count == 0)
         {
+            // Nothing we can see holds it. If we cannot see every drive, that is not the same as it
+            // not being there.
+            if (!snapshot.IsComplete)
+            {
+                return new PoolListing { Entries = [], IsComplete = false };
+            }
+
             throw new DirectoryNotFoundException($"'{normalized}' is not a directory in the pool.");
         }
 
+        // Starts as whatever the topology can vouch for, and is lowered further by any source we
+        // then fail to read.
+        var complete = snapshot.IsComplete;
         var isRoot = PoolPath.IsRoot(normalized);
         var merged = new Dictionary<string, PoolEntry>(PoolPath.Comparer);
 
@@ -195,11 +220,19 @@ public sealed class UnionView(IPoolTopology topology)
             }
             catch (DirectoryNotFoundException)
             {
-                // The drive went away mid-enumeration; the pool simply runs degraded.
+                // The drive went away mid-enumeration. The pool runs degraded, but this listing is
+                // missing whatever that drive held here and must say so.
+                complete = false;
                 continue;
             }
             catch (UnauthorizedAccessException)
             {
+                complete = false;
+                continue;
+            }
+            catch (IOException)
+            {
+                complete = false;
                 continue;
             }
 
@@ -234,9 +267,11 @@ public sealed class UnionView(IPoolTopology topology)
             }
         }
 
-        return merged.Values
-            .OrderBy(static e => e.Name, PoolPath.Comparer)
-            .ToArray();
+        return new PoolListing
+        {
+            Entries = [.. merged.Values.OrderBy(static e => e.Name, PoolPath.Comparer)],
+            IsComplete = complete,
+        };
     }
 
     public IReadOnlyList<string> EnumerateNames(string poolPath) =>
@@ -290,6 +325,8 @@ public sealed class UnionView(IPoolTopology topology)
             }
             catch (IOException)
             {
+                // Cut short rather than crashing the listing. The caller's completeness flag is
+                // already false whenever the drive this came from is one we cannot read.
                 yield break;
             }
             catch (UnauthorizedAccessException)
@@ -300,4 +337,18 @@ public sealed class UnionView(IPoolTopology topology)
             yield return current;
         }
     }
+}
+
+/// <summary>
+/// A merged listing and whether it is the whole of it. See <see cref="UnionView.List"/>.
+/// </summary>
+public sealed record PoolListing
+{
+    public required IReadOnlyList<PoolEntry> Entries { get; init; }
+
+    /// <summary>
+    /// False when a drive that may hold entries here could not be read. The entries are still
+    /// valid — they exist — but their absence proves nothing.
+    /// </summary>
+    public required bool IsComplete { get; init; }
 }

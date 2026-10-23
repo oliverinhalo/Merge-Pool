@@ -61,3 +61,25 @@ public sealed class AsyncCommand(Func<Task> execute, Func<bool>? canExecute = nu
 
     public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 }
+
+/// <summary>
+/// A command for the things that happen there and then: putting one setting back to its default,
+/// revealing the advanced ones. Nothing here waits on the service, so there is no need for the
+/// re-entrancy guard <see cref="AsyncCommand"/> carries.
+/// </summary>
+public sealed class RelayCommand(Action execute, Func<bool>? canExecute = null) : ICommand
+{
+    public event EventHandler? CanExecuteChanged;
+
+    public bool CanExecute(object? parameter) => canExecute?.Invoke() ?? true;
+
+    public void Execute(object? parameter)
+    {
+        if (CanExecute(parameter))
+        {
+            execute();
+        }
+    }
+
+    public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+}

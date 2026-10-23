@@ -25,6 +25,7 @@ internal static class NtStatus
     public const int NoSuchDevice = unchecked((int)0xC000000E);
     public const int DataError = unchecked((int)0xC000003E);
     public const int CannotDelete = unchecked((int)0xC0000121);
+    public const int IoTimeout = unchecked((int)0xC00000B5);
 
     public static int From(PoolFsStatus status) => status switch
     {
@@ -44,6 +45,7 @@ internal static class NtStatus
         PoolFsStatus.DeviceNotReady => DeviceNotReady,
         PoolFsStatus.NoSuchDevice => NoSuchDevice,
         PoolFsStatus.CannotDelete => CannotDelete,
+        PoolFsStatus.IoTimeout => IoTimeout,
         _ => DataError,
     };
 }

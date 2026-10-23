@@ -63,6 +63,13 @@ public sealed class PoolDefinition
     [JsonPropertyName("duplication")]
     public List<DuplicationRule> Duplication { get; set; } = [];
 
+    /// <summary>
+    /// Whether this pool is shared on the network over SMB, and to whom. Off until someone has said
+    /// who may connect — see <see cref="Sharing.PoolShareOptions"/>.
+    /// </summary>
+    [JsonPropertyName("share")]
+    public Sharing.PoolShareOptions Share { get; set; } = new();
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement> AdditionalData { get; set; } = [];
 }
@@ -484,6 +491,19 @@ public sealed class ServiceOptions
 
     [JsonPropertyName("logLevel")]
     public string LogLevel { get; set; } = "Information";
+
+    /// <summary>
+    /// Remount a pool whose file system has stopped answering, rather than leaving it wedged.
+    /// </summary>
+    /// <remarks>
+    /// On by default, because the alternative is what it replaced: a mount that answers nothing,
+    /// processes stuck in an uninterruptible wait that cannot be killed, and a reboot as the only
+    /// way out. A remount breaks open handles on the pool, which is disruptive — but a mount that
+    /// has stalled has already broken them, and this at least lets the applications using it
+    /// reconnect and carry on. Pool data is never involved either way.
+    /// </remarks>
+    [JsonPropertyName("recoverStalledMounts")]
+    public bool RecoverStalledMounts { get; set; } = true;
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement> AdditionalData { get; set; } = [];

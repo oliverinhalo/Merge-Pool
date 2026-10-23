@@ -55,17 +55,18 @@ builder.Services.AddSingleton(sp =>
     }
 
     var engine = sp.GetRequiredService<PoolEngine>();
-    var updates = engine.Config.Updates;
     var layout = new InstallLayout(installRoot);
     var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient(UpdateHttpClientName);
 
     return new UpdateHost(new AutoUpdateService(
         layout,
-        new GitHubReleaseFeed(http, new ReleaseFeedOptions
+        // Read on every check, not captured here: turning pre-releases on or off in the window
+        // then takes effect at the next check rather than at the next service restart.
+        new GitHubReleaseFeed(http, () => new ReleaseFeedOptions
         {
-            Owner = updates.RepositoryOwner,
-            Repository = updates.RepositoryName,
-            IncludePrereleases = updates.IncludePrereleases,
+            Owner = engine.Config.Updates.RepositoryOwner,
+            Repository = engine.Config.Updates.RepositoryName,
+            IncludePrereleases = engine.Config.Updates.IncludePrereleases,
         }),
         new ReleaseStager(layout, http),
         sp.GetRequiredService<IUpgradeLauncher>(),

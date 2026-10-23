@@ -20,6 +20,7 @@
       <converters:StateDotBrushConverter x:Key="StateDotBrush" />
       <converters:StateTextBrushConverter x:Key="StateTextBrush" />
       <converters:NotBoolConverter x:Key="NotBool" />
+      <converters:NullToVisibilityConverter x:Key="NullToVisibility" />
     </ResourceDictionary>
   </Application.Resources>
 </Application>

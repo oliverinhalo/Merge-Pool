@@ -22,6 +22,24 @@ public sealed class PoolPartManager(
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     /// <summary>
+    /// When each part was last resolved as definitely present. Drives it to
+    /// <see cref="PoolPartState.Unavailable"/> rather than straight to
+    /// <see cref="PoolPartState.Offline"/> while it is within the grace period, so one failed volume
+    /// query cannot make a drive's files look deleted.
+    /// </summary>
+    private readonly Dictionary<Guid, DateTimeOffset> _lastSeen = [];
+
+    private readonly object _lastSeenGate = new();
+
+    /// <summary>
+    /// How long a drive that has stopped answering is treated as unreachable rather than gone. Long
+    /// enough to cover a volume query that timed out, a letter in flux or an enclosure that
+    /// re-enumerated; short enough that genuinely pulling a drive settles into degraded service
+    /// while someone is still watching the window.
+    /// </summary>
+    public TimeSpan PresenceGracePeriod { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Supplies each part's measured size. Optional: without one, parts report drive figures only
     /// and the pool's own usage reads as unknown rather than as zero.
     /// </summary>
@@ -133,6 +151,7 @@ public sealed class PoolPartManager(
 
         var volumes = _volumeProvider.GetVolumes();
         var parts = new List<PoolPart>(definition.Drives.Count);
+        var now = _timeProvider.GetUtcNow();
 
         foreach (var drive in definition.Drives)
         {
@@ -144,11 +163,13 @@ public sealed class PoolPartManager(
             var volume = ResolveVolume(drive, volumes);
             if (volume?.RootPath is null)
             {
+                // The volume is not in the enumeration, or has no mount point. Within the grace
+                // period that is "we cannot see it right now"; after it, the drive really is gone.
                 parts.Add(new PoolPart
                 {
                     PartId = drive.PartId,
                     Volume = VolumeId.TryParse(drive.VolumeId, out var id) ? id : VolumeId.Empty,
-                    State = PoolPartState.Offline,
+                    State = AbsenceState(drive.PartId, now),
                     Label = drive.Label ?? string.Empty,
                     SpeedFactor = drive.SpeedFactorOverride ?? 1.0,
                 });
@@ -156,21 +177,43 @@ public sealed class PoolPartManager(
             }
 
             var root = PoolPartLayout.RootPathFor(volume.RootPath, drive.PartId);
-            if (!Directory.Exists(root))
+            var presence = PartFolderPresence(root);
+
+            if (presence is FolderPresence.Unreadable)
             {
-                // Volume is present but the part folder is gone: treat as offline rather than
-                // silently recreating it and hiding data loss.
+                // We asked and could not get an answer: busy, locked, a letter mid-flux. Reporting
+                // this as absent is what made a populated folder list as empty, so it is reported
+                // as exactly what it is.
                 parts.Add(new PoolPart
                 {
                     PartId = drive.PartId,
                     Volume = volume.Id,
-                    State = PoolPartState.Offline,
+                    State = PoolPartState.Unavailable,
                     Label = volume.Label,
                     DriveLetter = volume.DriveLetter,
                     SpeedFactor = drive.SpeedFactorOverride ?? 1.0,
                 });
                 continue;
             }
+
+            if (presence is FolderPresence.Absent)
+            {
+                // Volume is present but the part folder is definitively not there: offline rather
+                // than silently recreating it and hiding data loss. Still graced, because a drive
+                // that has just re-enumerated can answer this way for a moment.
+                parts.Add(new PoolPart
+                {
+                    PartId = drive.PartId,
+                    Volume = volume.Id,
+                    State = AbsenceState(drive.PartId, now),
+                    Label = volume.Label,
+                    DriveLetter = volume.DriveLetter,
+                    SpeedFactor = drive.SpeedFactorOverride ?? 1.0,
+                });
+                continue;
+            }
+
+            MarkSeen(drive.PartId, now);
 
             var usage = UsageMeter?.Get(drive.PartId) ?? PartUsage.Unknown;
 
@@ -224,6 +267,79 @@ public sealed class PoolPartManager(
         }
 
         return null;
+    }
+
+    /// <summary>What we could establish about a part folder — which is not always a yes or a no.</summary>
+    private enum FolderPresence
+    {
+        Present,
+        Absent,
+        Unreadable,
+    }
+
+    /// <summary>
+    /// Whether the part folder is there. <see cref="Directory.Exists(string)"/> alone cannot answer
+    /// this: it returns false both for "not there" and for "I could not find out", and treating
+    /// those the same is what let a drive's files vanish from the pool for a moment.
+    /// </summary>
+    private static FolderPresence PartFolderPresence(string root)
+    {
+        try
+        {
+            if (Directory.Exists(root))
+            {
+                return FolderPresence.Present;
+            }
+
+            // Exists said no. Ask whether the volume root itself is readable: if the drive answers
+            // normally, the folder really is gone; if even this fails, we learned nothing.
+            var volumeRoot = Path.GetPathRoot(root);
+            if (string.IsNullOrEmpty(volumeRoot))
+            {
+                return FolderPresence.Absent;
+            }
+
+            _ = new DirectoryInfo(volumeRoot).GetDirectories(PoolPartLayout.FolderPrefix + "*");
+            return FolderPresence.Absent;
+        }
+        catch (Exception exception) when (exception is IOException
+            or UnauthorizedAccessException
+            or ArgumentException
+            or NotSupportedException)
+        {
+            return FolderPresence.Unreadable;
+        }
+    }
+
+    /// <summary>
+    /// A part we cannot find is unreachable until the grace period runs out, and only then offline.
+    /// </summary>
+    private PoolPartState AbsenceState(Guid partId, DateTimeOffset now)
+    {
+        lock (_lastSeenGate)
+        {
+            if (!_lastSeen.TryGetValue(partId, out var seen))
+            {
+                // Never seen in this process: nothing to protect, so take it at face value.
+                return PoolPartState.Offline;
+            }
+
+            if (now - seen <= PresenceGracePeriod)
+            {
+                return PoolPartState.Unavailable;
+            }
+
+            _lastSeen.Remove(partId);
+            return PoolPartState.Offline;
+        }
+    }
+
+    private void MarkSeen(Guid partId, DateTimeOffset now)
+    {
+        lock (_lastSeenGate)
+        {
+            _lastSeen[partId] = now;
+        }
     }
 
     private static PoolPart ToPart(VolumeInfo volume, Guid partId, string root) => new()

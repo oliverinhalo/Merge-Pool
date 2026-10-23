@@ -12,6 +12,184 @@ change:
 - **Config schema** — `config.json` `schemaVersion`, migrated forward only, backed up first,
   unknown fields preserved.
 
+## [0.11.0] - 2026-10-23
+
+Data format: unchanged. Config schema: unchanged — a `share` section is added to each pool and
+defaults to off. IPC protocol: 8, additive.
+
+### Added
+
+- **MergePool shares a pool on the network itself.** Docker Desktop cannot bind-mount a WinFsp
+  drive — there is no block device behind a user-mode file system for its Linux VM to recognise —
+  so a container reaches the pool over SMB or not at all. Doing that by hand meant creating the
+  share and then putting it back every time the pool remounted, which is a watchdog script that
+  becomes the thing that breaks. The service owns the share's lifecycle instead: created when the
+  pool is mounted, removed when it is not, and reconciled against the mounts on every tick, so it
+  survives a service restart, an update, a drive letter change and a recovery by the I/O watchdog
+  without anything having to remember it.
+- **The window shows the `docker volume create` line for the share**, with a copy button. A Docker
+  named volume is re-established by Docker every time a container starts, which is why it survives
+  a reboot or a dropped session where a `mount -t cifs` inside the `docker-desktop` distro — a
+  distro Docker rebuilds out from under you — needs a script to put it back.
+- `share.get` and `share.set` over IPC, capability `networkShare`.
+
+### Security
+
+These are deliberate refusals, not omissions:
+
+- **No share without a named account.** Turning sharing on is not enough: until a Windows account is
+  named the share does not exist and the window says why. MergePool never grants `Everyone` and
+  never guesses an account — the pool holds everything its owner has, and the person setting this up
+  is the only one who knows which service account their containers use.
+- **The firewall is left alone.** SMB is served by Windows on port 445 under the built-in File and
+  Printer Sharing rules. Opening a system service port to a network is a bigger decision than an
+  application should take on someone's behalf, so MergePool reports whether those rules are on and
+  leaves them to you. (The web interface is different: it listens on a port MergePool chose, and
+  opens only that one.)
+- **A share MergePool did not create is never touched**, even one with the name MergePool wanted
+  and even when a pool is asking for it. The pool stays unshared and says why, rather than removing
+  a share nothing here knows anything about.
+- Share names are reduced to what the SMB server will take, and a name with nothing usable left in
+  it is refused rather than guessed at.
+
+## [0.10.0] - 2026-10-23
+
+Data format: unchanged. Config schema: unchanged — one optional `service.recoverStalledMounts` field
+is added and defaults to the previous behaviour being impossible. IPC protocol: 7, additive.
+
+This release is entirely about a production report: a pool backing a Docker Desktop host (Immich,
+Jellyfin, Sonarr/Radarr, Kiwix reading and writing through it) that went unresponsive under
+sustained concurrent I/O, transiently reported a populated folder as empty, and managed 1-2 MB/s off
+four NVMe drives. All three had the same shape — work that can block, done while holding something
+every other file system callback needs.
+
+### Fixed
+
+- **The pool could deadlock against itself and take the mount down for good.** Resolving the
+  topology asks Windows to describe every volume on the machine, and one of those volumes is the
+  pool's own mount. Describing it is a volume query against `P:\`, which Windows hands to WinFsp,
+  which dispatches it back in as a `GetVolumeInfo` callback — on another thread, needing the same
+  topology the first thread was in the middle of resolving while holding a lock. Each waited for the
+  other, inside the kernel's I/O path, with nothing to time either out. That is the reported hang:
+  `dir` and `vol` never returning, and processes blocked on the pool that cannot be killed even with
+  a `SIGKILL`, because a thread waiting in the kernel on a file system that will never answer is not
+  interruptible. Four things now make it impossible: no lock is held across a resolve; the resolve
+  runs on the thread pool, never on a callback thread; volume enumeration skips our own mounts
+  instead of asking us about ourselves; and a caller with nothing cached waits a bounded time and
+  then gets an explicit "not ready" rather than waiting for ever.
+- **Concurrent reads of one file returned each other's data.** Every read and write seeked a shared
+  `FileStream` — set the position, then read — and WinFsp dispatches calls for one handle on as many
+  threads as there is traffic. Two threads interleaving a seek with another's read hand back the
+  wrong offset's bytes, with no error anywhere. Measured against the old code: **480 of 1600
+  concurrent reads of one handle returned another offset's data, and 4 threw.** Reads and writes now
+  go through `RandomAccess` by absolute offset, which is safe under concurrent use and does not
+  seek. This was the worst of the three — a hang announces itself, silently wrong bytes do not.
+- **Moving a file between drives mid-write could pull the stream out from under a reader.** A write
+  that outgrows its drive relocates the file and swaps the handle's stream; a concurrent read was
+  then using a disposed stream. Relocation, truncation, renaming and closing now take the handle
+  exclusively and wait for in-flight I/O to drain, and reads and writes take it shared. Every one of
+  those waits is bounded and reports a timeout rather than blocking for ever.
+- **A healthy pool could report a populated folder as empty, successfully.** A drive that hiccups —
+  a volume query that timed out, an enclosure that re-enumerated, a letter in flux — resolved as
+  `Offline`, exactly like a drive someone had unplugged, and its files dropped out of the merged
+  view. Since folders span drives and files do not, the folder still resolved on the other drives
+  and listed as *empty and fine*. An application checking for a marker file reads that as deletion.
+  `Directory.Exists` returning false for both "not there" and "could not ask" is the root of it.
+  Now: a drive we cannot reach is `Unavailable`, not absent, for a grace period; a view missing a
+  part is **incomplete**; and listings, "no such file" answers and `CanDelete` from an incomplete
+  view are refused with "device not ready" instead of served as fact. A drive that is genuinely gone
+  still degrades the pool exactly as before — losing a drive is supported, hiding the files on a
+  drive that is merely slow to answer is not.
+- **No copy of a protected folder is removed while a drive cannot be read.** The same root cause with
+  teeth: "there are more copies than the rule asks for" computed from a view missing a drive is an
+  undercount reasoned about as though it were complete, and acting on it deletes a copy that was not
+  surplus. Surplus removal now requires a complete view.
+- **Throughput.** Every write that extended a file resolved the topology — through a lock, with a
+  full machine-wide volume scan every two seconds — so a 1 GB copy paid for ~16,000 serialised lock
+  acquisitions interleaved with scans of every volume on the machine, including the pool itself. A
+  write that fits inside the file it is already in now touches no topology at all, the scan no longer
+  serialises anything, and `FileStream` buffering is gone from the data path (it was overhead on top
+  of WinFsp's own caching, and a correctness hazard next to positional I/O).
+
+### Added
+
+- **A bounded wait everywhere the pool used to wait indefinitely**, each one reporting a timeout the
+  caller can retry rather than a hang it cannot escape: 30 seconds for a read or write to get the
+  handle, 60 for an operation that swaps the stream, 5 for a cold topology resolve.
+- **Per-pool I/O health, and a watchdog that acts on it.** Stalls and failures are recorded per area
+  of the path — reads, writes, resolving the drives — because they fail independently, and the pool's
+  state is the worst of them. A pool whose I/O has stalled for 90 seconds is remounted, which is the
+  one action that returns WinFsp's dispatcher state to a known good one. It is several conditions
+  deep — a run of stalls rather than one slow operation, a 10-minute cooldown, never while draining,
+  and switchable off with `service.recoverStalledMounts` — because a remount breaks open handles.
+  Every decision is logged, including the decisions not to act. Pool data is never involved: a
+  remount takes the drive letter away and brings it back, and every file stays where it is.
+- **`health.check` reports whether each mount is actually answering** (protocol 7, capability
+  `ioHealth`), with the stalls and failures behind the verdict. The existing check could not see this:
+  it reads configuration and resolves drives, and the reply is written by a different thread from the
+  ones that are stuck — which is why the service reported itself perfectly healthy throughout the
+  original incident.
+- **[docs/DOCKER.md](docs/DOCKER.md)** — reaching a pool from Docker Desktop and WSL2: why a bind
+  mount of a WinFsp drive cannot work, the SMB path that does, and why a Docker named volume with
+  CIFS options is far less fragile than a `mount -t cifs` inside the `docker-desktop` distro, which
+  that distro's rebuilds take out from under you. Includes per-application notes and what MergePool
+  intends to do about managing the share itself.
+
+## [0.9.0] - 2026-10-12
+
+Data format: unchanged. Config schema: unchanged — every setting now in the window was already a
+field in `config.json`, reachable until now only by editing that file by hand. IPC protocol: 6,
+additive (see [docs/UPGRADES.md](docs/UPGRADES.md)).
+
+### Added
+
+- **An Advanced switch in the title bar, and every tunable the engine has behind it.** The settings
+  worth changing day to day — where new files go, how much space to keep clear, whether and how fast
+  to even the drives out — stay in front of everyone. Turning Advanced on adds the rest: the free-space
+  exponent and write headroom, the speed a parked drive has to regain, latency throttling, how many
+  samples it takes to park a drive and to bring it back, the shortest time parked, the speed counted
+  as normal, the three smoothing factors, the speed-factor floor and ceiling, the smallest write that
+  counts, the idle probe's interval and size, the gaps that start and stop a rebalance, the largest
+  file it will move, whether it gives way to real work, how copying is paced, how often protected
+  folders are swept, how much room a copy leaves, how often MergePool looks for a new version, and
+  whether pre-releases count. Thirty settings in all, where there were four. The switch is remembered
+  per user, governs the whole window rather than one tab, changes nothing on its own, and is also
+  Ctrl+Shift+A.
+- **Every button, switch and slider explains itself.** Hovering anything you can act on gives a
+  paragraph rather than a label: what it does, what it affects, and what it does not touch. Unmount
+  says the files stay where they are; Remove pool says nothing is deleted; Rebalance says each copy is
+  verified before the original goes; the drive tick box says it is a selection and not an action; the
+  byte-for-byte option says what it costs. A test now fails if a control is added to the window
+  without that sentence.
+- **Each setting carries its own explanation on screen**, not only in a tooltip: its value in words
+  ("a drive is parked once it writes below 45% of its own normal speed"), what it does, what you gain
+  and give up by moving it, the value MergePool ships with, and — once it is off that value — a
+  **changed** mark and a one-click way back for that setting alone. Each group of settings says how
+  many of its settings are no longer at their defaults.
+- **F5** refreshes the window, the same as the Refresh button.
+
+### Changed
+
+- The Settings tab is rebuilt around that description, with Save and Back to defaults in a footer
+  that cannot be scrolled past, saying whether anything is waiting to be sent. Settings reach the
+  service when you save, so a half-moved slider never does; updates and start-up are separate and
+  still take effect as you set them. A periodic refresh no longer pulls a slider out from under
+  whoever is moving it.
+- The sliders, switches and tooltips are drawn by MergePool rather than by WPF's defaults: a filled
+  track with a round thumb, a real switch for the settings that turn something on, and tooltips that
+  wrap, are themed, and stay on screen long enough to read a paragraph.
+- Settings that have to stay in order now do: a drive always has to regain more speed than the amount
+  that parked it, and a rebalance always stops at a smaller gap than the one that starts it. Moving
+  the first slider pushes the second along in front of you rather than it jumping on save.
+
+### Fixed
+
+- **A hand-edited `config.json` can no longer wedge the engine.** Every tunable is clamped into a
+  range that still works when it is stored — a zero duplication scan interval, a zero rebalance rate,
+  a speed-factor ceiling under its floor, an exit ratio under its enter ratio, a non-finite weight —
+  and what the window shows after a save is what the service actually stored, so it never claims a
+  value the engine is not using. Reasonable hand-edited values are left exactly as they are.
+
 ## [0.8.0] - 2026-10-10
 
 Data format: a reserved `.staging` folder is added at the install root — see below. Config schema:
