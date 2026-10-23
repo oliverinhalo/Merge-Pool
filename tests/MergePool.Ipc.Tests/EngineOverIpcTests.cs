@@ -37,6 +37,11 @@ public sealed class EngineOverIpcTests : IAsyncLifetime
             ConfigStore = new ConfigStore(Path.Combine(_root, "config.json")),
             VolumeProvider = _volumes,
             MountService = _mounts,
+
+            // These tests are about steady-state degraded service: a drive that is gone reports as
+            // offline straight away rather than being graced first. The grace period itself is
+            // tested in MergePool.Core.Tests, where a clock can be held still.
+            PresenceGracePeriod = TimeSpan.Zero,
         });
 
         var router = new IpcRouter().Register(new EngineIpcHandler(_engine));
@@ -902,6 +907,53 @@ public sealed class EngineOverIpcTests : IAsyncLifetime
         Assert.True(client.Supports(Capabilities.DriveRemoval));
         Assert.True(client.Supports(Capabilities.Usage));
         Assert.True(client.Supports(Capabilities.AutoUpdate));
+    }
+
+    [Fact]
+    public async Task A_pool_that_has_stopped_answering_makes_the_health_check_unhealthy()
+    {
+        // The configuration health check cannot see this on its own: it reads config and resolves
+        // drives, and a mount whose callbacks have stopped completing looks fine to both. This reply
+        // is written by a different thread from the ones that are stuck, which is exactly why the
+        // service used to report itself perfectly healthy while the pool was wedged.
+        var volume = AddDrive("One");
+        await using var client = await ConnectAsync();
+
+        await client.InvokeAsync<PoolDto>(
+            Methods.PoolCreate,
+            new CreatePoolRequest { Name = "Media", MountPoint = "P:", VolumeIds = [volume.ToVolumePath()] },
+            CancellationToken.None);
+
+        var healthy = await client.InvokeAsync<HealthCheckResult>(
+            Methods.HealthCheck, null, CancellationToken.None);
+
+        Assert.True(healthy.Healthy);
+        Assert.NotEqual(
+            nameof(MergePool.Core.Health.IoHealthState.Stalled), Assert.Single(healthy.Io).State);
+
+        var health = _engine.IoHealth.Single().Health;
+        for (var i = 0; i < MergePool.Core.Health.IoHealthMonitor.StallsBeforeStalled; i++)
+        {
+            health.RecordStall("read", TimeSpan.FromSeconds(30), "did not return");
+        }
+
+        var stalled = await client.InvokeAsync<HealthCheckResult>(
+            Methods.HealthCheck, null, CancellationToken.None);
+
+        Assert.False(stalled.Healthy);
+        Assert.Contains(stalled.Problems, problem => problem.Contains("not answering"));
+
+        var io = Assert.Single(stalled.Io);
+        Assert.Equal(nameof(MergePool.Core.Health.IoHealthState.Stalled), io.State);
+        Assert.NotEmpty(io.RecentFaults);
+    }
+
+    [Fact]
+    public async Task The_io_health_of_each_pool_is_announced_as_a_capability()
+    {
+        await using var client = await ConnectAsync();
+
+        Assert.True(client.Supports(Capabilities.IoHealth));
     }
 
     [Fact]

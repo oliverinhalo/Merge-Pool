@@ -17,7 +17,7 @@ namespace MergePool.Ipc.Protocol;
 /// </remarks>
 public static class ProtocolVersion
 {
-    public const int Current = 6;
+    public const int Current = 7;
 
     public const int MinimumSupported = 1;
 
@@ -57,6 +57,11 @@ public static class Capabilities
     /// than only by hand-editing the config file (protocol 6).
     /// </summary>
     public const string AdvancedSettings = "advancedSettings";
+    /// <summary>
+    /// Per-pool I/O health on <c>health.check</c>: whether each mount is actually answering, and
+    /// the stalls and failures behind that verdict (protocol 7).
+    /// </summary>
+    public const string IoHealth = "ioHealth";
     public const string Config = "config";
     public const string Upgrade = "upgrade";
 
@@ -73,6 +78,7 @@ public static class Capabilities
         WebInterface,
         Duplication,
         AdvancedSettings,
+        IoHealth,
         Config,
         Upgrade,
     ];

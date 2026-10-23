@@ -983,10 +983,34 @@ public sealed class EngineIpcHandler(
     private HealthCheckResult HealthCheck()
     {
         var problems = _engine.CheckHealth();
+
+        var io = _engine.IoHealth
+            .Select(pool => new PoolIoHealthDto
+            {
+                PoolId = pool.PoolId,
+                Name = pool.Name,
+                State = pool.Health.State.ToString(),
+                Summary = pool.Health.Describe(),
+                StalledSeconds = pool.Health.StalledFor?.TotalSeconds,
+                Stalls = pool.Health.Stalls,
+                Failures = pool.Health.Failures,
+                RecentFaults = [.. pool.Health.RecentFaults.TakeLast(5).Select(f => f.ToString())],
+            })
+            .ToList();
+
+        // A pool that has stopped answering is not a healthy service, whatever the configuration
+        // check says: that check reads config and resolves drives, and neither notices a mount
+        // whose callbacks are no longer completing.
+        var stalled = io
+            .Where(pool => pool.State == nameof(Core.Health.IoHealthState.Stalled))
+            .Select(pool => $"Pool '{pool.Name}' is not answering: {pool.Summary}")
+            .ToList();
+
         return new HealthCheckResult
         {
-            Healthy = problems.Count == 0,
-            Problems = [.. problems],
+            Healthy = problems.Count == 0 && stalled.Count == 0,
+            Problems = [.. problems, .. stalled],
+            Io = io,
         };
     }
 }

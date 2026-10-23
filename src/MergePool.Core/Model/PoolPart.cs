@@ -4,7 +4,10 @@ namespace MergePool.Core.Model;
 
 public enum PoolPartState
 {
-    /// <summary>The volume is not present. The pool runs degraded and rejoins automatically.</summary>
+    /// <summary>
+    /// The volume is definitely not present — Windows did not list it at all. The pool runs
+    /// degraded and the drive rejoins automatically when it comes back.
+    /// </summary>
     Offline = 0,
 
     /// <summary>Present and taking new files.</summary>
@@ -12,6 +15,24 @@ public enum PoolPartState
 
     /// <summary>Present and readable, but excluded from new placement (throttled, full, read-only, draining).</summary>
     ReadOnly = 2,
+
+    /// <summary>
+    /// We could not determine this drive's state right now: the volume query failed or timed out, or
+    /// its pool part folder could not be read. The drive has probably not gone anywhere.
+    /// </summary>
+    /// <remarks>
+    /// This state exists because of a reported near-miss. A drive that hiccups for a moment used to
+    /// resolve as <see cref="Offline"/>, exactly like a drive someone had unplugged. Its files
+    /// dropped out of the merged view, and a folder whose content lived on it listed as <em>empty
+    /// and fine</em> — the pool said "this folder has nothing in it", not "I cannot read this
+    /// folder". An application checking for a marker file reads that as deletion, and acts on it.
+    /// <para>So the two cases are now told apart. A drive that is merely unreachable leaves the pool
+    /// <em>incomplete</em> rather than degraded: listings and "it does not exist" answers from an
+    /// incomplete pool are refused instead of being served as fact. Only once the drive has been
+    /// definitively absent for the grace period does it become <see cref="Offline"/> and the pool
+    /// settle into ordinary degraded service, where those answers are true again.</para>
+    /// </remarks>
+    Unavailable = 3,
 }
 
 /// <summary>A resolved pool part: a <c>.PoolPart-{GUID}</c> folder on a currently known volume.</summary>
@@ -62,9 +83,19 @@ public sealed record PoolPart
     /// </summary>
     public long PoolCapacityBytes => PoolBytes is { } pooled ? pooled + FreeBytes : TotalBytes;
 
-    public bool IsOnline => State is not PoolPartState.Offline && RootPath is not null;
+    /// <summary>
+    /// Readable right now, so it contributes to the merged view. An unavailable part is not online:
+    /// we cannot read it, and pretending we can is what hid files.
+    /// </summary>
+    public bool IsOnline => State is (PoolPartState.Online or PoolPartState.ReadOnly) && RootPath is not null;
 
     public bool AcceptsNewFiles => State is PoolPartState.Online && RootPath is not null;
+
+    /// <summary>
+    /// Whether we know what this drive is doing. False means the merged view is missing a part whose
+    /// content we cannot account for, so a listing or a miss from it is not evidence of anything.
+    /// </summary>
+    public bool IsPresenceKnown => State is not PoolPartState.Unavailable;
 
     /// <summary>Host root, or a throw when the caller forgot to check <see cref="IsOnline"/>.</summary>
     public string RequireRootPath() =>

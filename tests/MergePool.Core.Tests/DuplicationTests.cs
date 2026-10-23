@@ -252,6 +252,50 @@ public sealed class DuplicationPlannerTests
     }
 
     [Fact]
+    public void No_copy_is_ever_removed_while_a_drive_cannot_be_read()
+    {
+        // The same root cause as a folder listing as empty, with teeth: "there are more copies than
+        // the rule asks for" computed from a view that is missing a drive is an undercount reasoned
+        // about as though it were complete, and acting on it deletes a copy that was not surplus.
+        using var pool = new TempPool();
+        var a = pool.AddDrive("a").Part;
+        var b = pool.AddDrive("b").Part;
+        var c = pool.AddDrive("c").Part;
+
+        var stamp = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        pool.WriteInto(a, "Photos/one.jpg", "content", stamp);
+        pool.WriteInto(b, "Photos/one.jpg", "content", stamp);
+        pool.WriteInto(c, "Photos/one.jpg", "content", stamp);
+
+        // Complete view: one of the three is surplus to a two-copy rule, and may go.
+        Assert.Equal(1, new DuplicationPlanner(pool, Headroom.None).Plan([Rule("Photos", copies: 2)]).CopiesToRemove);
+
+        // The same pool with one drive unreadable. Nothing is deleted until we can see all of it.
+        var incomplete = new UnreadableDriveTopology(pool.Current, c);
+        var plan = new DuplicationPlanner(incomplete, Headroom.None).Plan([Rule("Photos", copies: 2)]);
+
+        Assert.Equal(0, plan.CopiesToRemove);
+        Assert.DoesNotContain(plan.Actions, action => action.Kind == DuplicationActionKind.RemoveCopy);
+    }
+
+    /// <summary>A snapshot with one part we cannot read, as a drive that stopped answering gives.</summary>
+    private sealed class UnreadableDriveTopology : Model.IPoolTopology
+    {
+        public UnreadableDriveTopology(Model.PoolSnapshot snapshot, Guid unreadablePart) =>
+            Current = snapshot with
+            {
+                Parts =
+                [
+                    .. snapshot.Parts.Select(part => part.PartId == unreadablePart
+                        ? part with { State = Model.PoolPartState.Unavailable, RootPath = null }
+                        : part),
+                ],
+            };
+
+        public Model.PoolSnapshot Current { get; }
+    }
+
+    [Fact]
     public void Surplus_copies_can_be_left_alone_entirely()
     {
         using var pool = new TempPool();

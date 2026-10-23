@@ -80,6 +80,7 @@ The UI and the service talk over a named pipe with a versioned protocol
 | 4 | `web.get`, `web.set`, `web.regenerateToken`, capability `webInterface` | Unaffected: an older UI never calls them, and the web interface is off until turned on |
 | 5 | `duplication.get`, `duplication.setRule`, `duplication.removeRule`, `duplication.setOptions`, `duplication.runNow`, capability `duplication` | Unaffected: an older UI never calls them, and a pool with no protected folders behaves exactly as before |
 | 6 | The expert tunables on `config.get`/`config.setPlacement` (write headroom, latency throttling, sample counts, smoothing factors, speed-factor limits, idle probe, rebalance thresholds), `copyHeadroomBytes` and `pauseWhileBusy` on `duplication.*`, `includePrereleases` on `update.*`, capability `advancedSettings` | Unaffected: every new field is optional on the way in and ignored on the way out, so an older UI keeps sending the four settings it knows and the service leaves the rest alone |
+| 7 | Per-pool I/O health on `health.check` (whether each mount is actually answering, and the stalls and failures behind it), capability `ioHealth` | Unaffected: the new field is additive and an older UI reads the `healthy` flag and `problems` list exactly as before |
 
 ## Config migrations
 

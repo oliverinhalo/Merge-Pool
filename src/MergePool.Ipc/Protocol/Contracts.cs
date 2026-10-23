@@ -564,6 +564,46 @@ public sealed class HealthCheckResult : IpcContract
 
     [JsonPropertyName("problems")]
     public List<string> Problems { get; set; } = [];
+
+    /// <summary>
+    /// What each pool's I/O is doing right now. Protocol 7: the configuration check above cannot
+    /// see a mount that has stopped answering — the pipe this reply comes down is served by a
+    /// different thread, so the service looks perfectly healthy while the pool is wedged.
+    /// </summary>
+    [JsonPropertyName("io")]
+    public List<PoolIoHealthDto> Io { get; set; } = [];
+}
+
+/// <summary>One pool's I/O health. Protocol 7.</summary>
+public sealed class PoolIoHealthDto : IpcContract
+{
+    [JsonPropertyName("poolId")]
+    public Guid PoolId { get; set; }
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>One of Unknown, Healthy, Slow, Stalled.</summary>
+    [JsonPropertyName("state")]
+    public string State { get; set; } = "Unknown";
+
+    /// <summary>One line saying what the pool's I/O is doing and why we say so.</summary>
+    [JsonPropertyName("summary")]
+    public string Summary { get; set; } = string.Empty;
+
+    /// <summary>Seconds the pool has been stalled, when it is.</summary>
+    [JsonPropertyName("stalledSeconds")]
+    public double? StalledSeconds { get; set; }
+
+    [JsonPropertyName("stalls")]
+    public long Stalls { get; set; }
+
+    [JsonPropertyName("failures")]
+    public long Failures { get; set; }
+
+    /// <summary>The most recent faults, newest last, for the window and the log.</summary>
+    [JsonPropertyName("recentFaults")]
+    public List<string> RecentFaults { get; set; } = [];
 }
 
 public sealed class MountRequest : IpcContract

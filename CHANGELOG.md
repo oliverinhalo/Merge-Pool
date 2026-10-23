@@ -12,6 +12,89 @@ change:
 - **Config schema** — `config.json` `schemaVersion`, migrated forward only, backed up first,
   unknown fields preserved.
 
+## [0.10.0] - 2026-10-23
+
+Data format: unchanged. Config schema: unchanged — one optional `service.recoverStalledMounts` field
+is added and defaults to the previous behaviour being impossible. IPC protocol: 7, additive.
+
+This release is entirely about a production report: a pool backing a Docker Desktop host (Immich,
+Jellyfin, Sonarr/Radarr, Kiwix reading and writing through it) that went unresponsive under
+sustained concurrent I/O, transiently reported a populated folder as empty, and managed 1-2 MB/s off
+four NVMe drives. All three had the same shape — work that can block, done while holding something
+every other file system callback needs.
+
+### Fixed
+
+- **The pool could deadlock against itself and take the mount down for good.** Resolving the
+  topology asks Windows to describe every volume on the machine, and one of those volumes is the
+  pool's own mount. Describing it is a volume query against `P:\`, which Windows hands to WinFsp,
+  which dispatches it back in as a `GetVolumeInfo` callback — on another thread, needing the same
+  topology the first thread was in the middle of resolving while holding a lock. Each waited for the
+  other, inside the kernel's I/O path, with nothing to time either out. That is the reported hang:
+  `dir` and `vol` never returning, and processes blocked on the pool that cannot be killed even with
+  a `SIGKILL`, because a thread waiting in the kernel on a file system that will never answer is not
+  interruptible. Four things now make it impossible: no lock is held across a resolve; the resolve
+  runs on the thread pool, never on a callback thread; volume enumeration skips our own mounts
+  instead of asking us about ourselves; and a caller with nothing cached waits a bounded time and
+  then gets an explicit "not ready" rather than waiting for ever.
+- **Concurrent reads of one file returned each other's data.** Every read and write seeked a shared
+  `FileStream` — set the position, then read — and WinFsp dispatches calls for one handle on as many
+  threads as there is traffic. Two threads interleaving a seek with another's read hand back the
+  wrong offset's bytes, with no error anywhere. Measured against the old code: **480 of 1600
+  concurrent reads of one handle returned another offset's data, and 4 threw.** Reads and writes now
+  go through `RandomAccess` by absolute offset, which is safe under concurrent use and does not
+  seek. This was the worst of the three — a hang announces itself, silently wrong bytes do not.
+- **Moving a file between drives mid-write could pull the stream out from under a reader.** A write
+  that outgrows its drive relocates the file and swaps the handle's stream; a concurrent read was
+  then using a disposed stream. Relocation, truncation, renaming and closing now take the handle
+  exclusively and wait for in-flight I/O to drain, and reads and writes take it shared. Every one of
+  those waits is bounded and reports a timeout rather than blocking for ever.
+- **A healthy pool could report a populated folder as empty, successfully.** A drive that hiccups —
+  a volume query that timed out, an enclosure that re-enumerated, a letter in flux — resolved as
+  `Offline`, exactly like a drive someone had unplugged, and its files dropped out of the merged
+  view. Since folders span drives and files do not, the folder still resolved on the other drives
+  and listed as *empty and fine*. An application checking for a marker file reads that as deletion.
+  `Directory.Exists` returning false for both "not there" and "could not ask" is the root of it.
+  Now: a drive we cannot reach is `Unavailable`, not absent, for a grace period; a view missing a
+  part is **incomplete**; and listings, "no such file" answers and `CanDelete` from an incomplete
+  view are refused with "device not ready" instead of served as fact. A drive that is genuinely gone
+  still degrades the pool exactly as before — losing a drive is supported, hiding the files on a
+  drive that is merely slow to answer is not.
+- **No copy of a protected folder is removed while a drive cannot be read.** The same root cause with
+  teeth: "there are more copies than the rule asks for" computed from a view missing a drive is an
+  undercount reasoned about as though it were complete, and acting on it deletes a copy that was not
+  surplus. Surplus removal now requires a complete view.
+- **Throughput.** Every write that extended a file resolved the topology — through a lock, with a
+  full machine-wide volume scan every two seconds — so a 1 GB copy paid for ~16,000 serialised lock
+  acquisitions interleaved with scans of every volume on the machine, including the pool itself. A
+  write that fits inside the file it is already in now touches no topology at all, the scan no longer
+  serialises anything, and `FileStream` buffering is gone from the data path (it was overhead on top
+  of WinFsp's own caching, and a correctness hazard next to positional I/O).
+
+### Added
+
+- **A bounded wait everywhere the pool used to wait indefinitely**, each one reporting a timeout the
+  caller can retry rather than a hang it cannot escape: 30 seconds for a read or write to get the
+  handle, 60 for an operation that swaps the stream, 5 for a cold topology resolve.
+- **Per-pool I/O health, and a watchdog that acts on it.** Stalls and failures are recorded per area
+  of the path — reads, writes, resolving the drives — because they fail independently, and the pool's
+  state is the worst of them. A pool whose I/O has stalled for 90 seconds is remounted, which is the
+  one action that returns WinFsp's dispatcher state to a known good one. It is several conditions
+  deep — a run of stalls rather than one slow operation, a 10-minute cooldown, never while draining,
+  and switchable off with `service.recoverStalledMounts` — because a remount breaks open handles.
+  Every decision is logged, including the decisions not to act. Pool data is never involved: a
+  remount takes the drive letter away and brings it back, and every file stays where it is.
+- **`health.check` reports whether each mount is actually answering** (protocol 7, capability
+  `ioHealth`), with the stalls and failures behind the verdict. The existing check could not see this:
+  it reads configuration and resolves drives, and the reply is written by a different thread from the
+  ones that are stuck — which is why the service reported itself perfectly healthy throughout the
+  original incident.
+- **[docs/DOCKER.md](docs/DOCKER.md)** — reaching a pool from Docker Desktop and WSL2: why a bind
+  mount of a WinFsp drive cannot work, the SMB path that does, and why a Docker named volume with
+  CIFS options is far less fragile than a `mount -t cifs` inside the `docker-desktop` distro, which
+  that distro's rebuilds take out from under you. Includes per-application notes and what MergePool
+  intends to do about managing the share itself.
+
 ## [0.9.0] - 2026-10-12
 
 Data format: unchanged. Config schema: unchanged — every setting now in the window was already a

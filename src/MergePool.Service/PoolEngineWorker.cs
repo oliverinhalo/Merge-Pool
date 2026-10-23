@@ -26,6 +26,7 @@ public sealed class PoolEngineWorker(
     private WebControlServer? _web;
     private WindowsFirewallRule? _firewall;
     private DateTimeOffset _lastDuplicationSweep;
+    private IoHealthWatchdog? _watchdog;
 
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -77,6 +78,8 @@ public sealed class PoolEngineWorker(
             ProtocolVersion.MinimumSupported,
             ProtocolVersion.Current);
 
+        _watchdog = new IoHealthWatchdog(engine, () => engine.Config.Service);
+
         engine.MountAll();
 
         foreach (var problem in engine.CheckHealth())
@@ -96,6 +99,11 @@ public sealed class PoolEngineWorker(
             try
             {
                 engine.Tick(stoppingToken);
+
+                // Before the background work, not after: a pool that has stopped answering is the
+                // one thing here that someone is actively waiting on.
+                CheckIoHealth();
+
                 RunRebalancePass(stoppingToken);
                 await RunDuplicationPassAsync(stoppingToken).ConfigureAwait(false);
 
@@ -112,6 +120,39 @@ public sealed class PoolEngineWorker(
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
                 logger.LogWarning(exception, "Background upkeep hit an IO error; continuing.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Acts on a pool whose file system has stopped answering. Nothing happens on a healthy tick,
+    /// which is nearly all of them.
+    /// </summary>
+    private void CheckIoHealth()
+    {
+        if (_watchdog is null)
+        {
+            return;
+        }
+
+        foreach (var outcome in _watchdog.Check())
+        {
+            if (outcome.Recovered)
+            {
+                logger.LogWarning(
+                    "Pool {Pool} stopped answering and was remounted to recover it. {Detail} "
+                    + "Files on the pool's drives are untouched; applications holding handles on the "
+                    + "pool will need to reopen them.",
+                    outcome.PoolName,
+                    outcome.Detail);
+            }
+            else
+            {
+                logger.LogWarning(
+                    "Pool {Pool} is not answering: {Detail} Not recovering it: {Reason}.",
+                    outcome.PoolName,
+                    outcome.Detail,
+                    outcome.Declined);
             }
         }
     }
