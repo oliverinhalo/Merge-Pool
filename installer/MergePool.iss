@@ -13,11 +13,16 @@
 #ifndef AppVersion
   ; build.ps1 passes /DAppVersion from Directory.Build.props. This is only the fallback for
   ; compiling the script straight from the Inno Setup IDE.
-  #define AppVersion "0.11.0"
+  #define AppVersion "0.12.0"
 #endif
 #define AppGuid "{6F0B2A1C-4E9D-4E6A-9E4F-3D1F1D4E7C21}"
 #define ServiceName "MergePool"
 #define WinFspUrl "https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-2.0.23075.msi"
+; Microsoft's evergreen link for the newest 8.0 Desktop Runtime, so this installer does not go out
+; of date every time they ship a patch. MergePool is framework-dependent and targets net8.0: .NET 9
+; or 10 being present does not help, because framework-dependent apps do not roll forward across a
+; major version by default.
+#define DotNetUrl "https://aka.ms/dotnet/8.0/windowsdesktop-runtime-win-x64.exe"
 
 [Setup]
 AppId={{#AppGuid}
@@ -64,7 +69,16 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\current\MergePool.exe"; Tasks
 Name: "{userstartup}\{#AppName}"; Filename: "{app}\current\MergePool.exe"; Parameters: "--tray"; Tasks: startup
 
 [Run]
-; WinFsp first: without it the service starts but cannot mount anything.
+; The two things MergePool cannot run without, installed before the service is registered. Neither
+; is bundled: both are downloaded from their vendor at install time, so this installer stays small
+; and always fetches the current build rather than one frozen at release.
+
+; .NET first: the service and the window are both .NET 8 applications, so without it nothing we
+; install afterwards will start at all.
+Filename: "{tmp}\windowsdesktop-runtime.exe"; Parameters: "/install /quiet /norestart"; \
+  StatusMsg: "Installing the .NET 8 Desktop Runtime…"; Check: NeedsDotNet; Flags: waituntilterminated
+
+; WinFsp next: without it the service starts but cannot mount anything.
 Filename: "msiexec.exe"; Parameters: "/i ""{tmp}\winfsp.msi"" /qn /norestart"; \
   StatusMsg: "Installing WinFsp…"; Check: NeedsWinFsp; Flags: waituntilterminated
 
@@ -182,6 +196,56 @@ end;
 function NeedsWinFsp: Boolean;
 begin
   Result := not WinFspInstalled;
+end;
+
+// Whether a .NET 8 Desktop Runtime is on the machine.
+//
+// Looks for the shared framework directory rather than asking `dotnet --list-runtimes`: the muxer
+// is not always on PATH for the account setup runs as, and launching a process to answer a
+// question the filesystem already answers is slower and has more ways to go wrong. The registry
+// key is the fallback for an install that put the shared framework somewhere unusual.
+//
+// Specifically 8.x: MergePool is framework-dependent and targets net8.0, and a framework-dependent
+// app does not roll forward onto .NET 9 or 10 by default. A machine with only .NET 10 needs this
+// as much as a machine with no .NET at all.
+function DotNetDesktopInstalled: Boolean;
+var
+  SharedRoot: String;
+  FindRec: TFindRec;
+begin
+  Result := False;
+  SharedRoot := ExpandConstant('{commonpf}\dotnet\shared\Microsoft.WindowsDesktop.App');
+
+  if DirExists(SharedRoot) then
+  begin
+    if FindFirst(SharedRoot + '\*', FindRec) then
+    begin
+      try
+        repeat
+          if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
+          begin
+            if Copy(FindRec.Name, 1, 2) = '8.' then
+            begin
+              Result := True;
+              Exit;
+            end;
+          end;
+        until not FindNext(FindRec);
+      finally
+        FindClose(FindRec);
+      end;
+    end;
+  end;
+
+  if not Result then
+    Result := RegKeyExists(
+      HKEY_LOCAL_MACHINE,
+      'SOFTWARE\WOW6432Node\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App');
+end;
+
+function NeedsDotNet: Boolean;
+begin
+  Result := not DotNetDesktopInstalled;
 end;
 
 function ServiceExists: Boolean;
@@ -402,18 +466,27 @@ function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
 
-  if (CurPageID = wpReady) and NeedsWinFsp then
+  if (CurPageID = wpReady) and (NeedsWinFsp or NeedsDotNet) then
   begin
     DownloadPage.Clear;
-    DownloadPage.Add('{#WinFspUrl}', 'winfsp.msi', '');
+
+    // Only what is actually missing: on a machine that already has both, nothing is downloaded and
+    // this page never appears.
+    if NeedsDotNet then
+      DownloadPage.Add('{#DotNetUrl}', 'windowsdesktop-runtime.exe', '');
+    if NeedsWinFsp then
+      DownloadPage.Add('{#WinFspUrl}', 'winfsp.msi', '');
+
     DownloadPage.Show;
     try
       try
         DownloadPage.Download;
       except
         SuppressibleMsgBox(
-          'MergePool could not download WinFsp:' + #13#10 + GetExceptionMessage + #13#10#13#10 +
-          'Install WinFsp from https://winfsp.dev and run this installer again.',
+          'MergePool could not download what it needs:' + #13#10 + GetExceptionMessage + #13#10#13#10 +
+          'MergePool needs the .NET 8 Desktop Runtime (x64) and WinFsp. Install them from' + #13#10 +
+          'https://dotnet.microsoft.com/download/dotnet/8.0 and https://winfsp.dev,' + #13#10 +
+          'then run this installer again.',
           mbCriticalError, MB_OK, IDOK);
         Result := False;
       end;
@@ -434,6 +507,16 @@ procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep <> ssPostInstall then
     Exit;
+
+  // The runtime install is a [Run] entry, and Inno does not check a [Run] entry's exit code, so a
+  // silent failure there would surface as a service that registers and will not start — with
+  // nothing on screen to say why. Checked here instead, before anything depends on it.
+  if not DotNetDesktopInstalled then
+    SuppressibleMsgBox(
+      'The .NET 8 Desktop Runtime is still not installed, so MergePool cannot start.' + #13#10#13#10 +
+      'Install it from https://dotnet.microsoft.com/download/dotnet/8.0 (the Desktop Runtime, ' +
+      'x64), then start the MergePool service from Services, or run this installer again.',
+      mbCriticalError, MB_OK, IDOK);
 
   // Permissions first. A version staged by an updater before 0.8.0 was unpacked in the service's own
   // temp directory and moved here, and a move keeps the permissions it had there: LocalSystem and

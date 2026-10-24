@@ -12,6 +12,30 @@ change:
 - **Config schema** — `config.json` `schemaVersion`, migrated forward only, backed up first,
   unknown fields preserved.
 
+## [0.12.0] - 2026-10-24
+
+Data format: unchanged. Config schema: unchanged. IPC protocol: 8, unchanged.
+
+### Added
+
+- **Setup installs what MergePool needs, so there is nothing to arrange first.** It already
+  installed WinFsp; it now does the same for the **.NET 8 Desktop Runtime**, which until now was a
+  manual step the documentation asked you to do first and the installer never checked. Skipping it
+  produced the least helpful failure MergePool had: setup finished happily, the service registered,
+  and then nothing started, with no message saying why.
+- Each prerequisite is downloaded from its own vendor while setup runs — Microsoft's evergreen
+  link for the current 8.0 Desktop Runtime, and WinFsp's own release — rather than bundled, so the
+  installer stays small and you get the current build rather than one frozen at release. Whatever
+  is already on the machine is left alone: on a machine with both, setup downloads nothing and the
+  download page never appears.
+- Setup checks specifically for **8.x**, because MergePool is framework-dependent and targets
+  net8.0: a machine with only .NET 9 or 10 needs the 8 runtime as much as a machine with no .NET at
+  all, since a framework-dependent application does not roll forward across a major version by
+  default.
+- If the runtime still is not there after setup tried to install it, setup says so plainly and
+  tells you where to get it. Inno Setup does not check a `[Run]` entry's exit code, so a silent
+  failure there would otherwise have surfaced as a service that registers and will not start.
+
 ## [0.11.0] - 2026-10-23
 
 Data format: unchanged. Config schema: unchanged — a `share` section is added to each pool and
