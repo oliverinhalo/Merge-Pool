@@ -19,25 +19,33 @@ and 11. If you want to build it from source — on Windows, Linux or macOS — s
 
 ### 1. Before you start
 
-You need three things. The installer handles the second one for you.
+Administrator rights, and that is all you have to arrange yourself. The installer handles the two
+pieces of software MergePool needs.
 
-| What | Why | How to get it |
+| What | Why | How you get it |
 | --- | --- | --- |
 | **Administrator rights** | MergePool registers a Windows service and writes under `Program Files` | Sign in as an administrator, or have one run setup |
-| **WinFsp 2.0 or newer** | This is what presents the pool as a drive. MergePool has no kernel driver of its own | **The installer downloads and installs it if it is missing.** To install it yourself first: [winfsp.dev](https://winfsp.dev) |
-| **.NET 8 Desktop Runtime (x64)** | MergePool ships as framework-dependent binaries | [dot.net/download](https://dotnet.microsoft.com/download/dotnet/8.0) → "Desktop Runtime". Pick **x64** |
+| **.NET 8 Desktop Runtime (x64)** | The service and the window are both .NET 8 applications | **The installer downloads and installs it if it is missing.** To do it yourself first: [dot.net/download](https://dotnet.microsoft.com/download/dotnet/8.0) → "Desktop Runtime", **x64** |
+| **WinFsp 2.0 or newer** | This is what presents the pool as a drive. MergePool has no kernel driver of its own | **The installer downloads and installs it if it is missing.** To do it yourself first: [winfsp.dev](https://winfsp.dev) |
 
-> **Install the .NET 8 Desktop Runtime before running setup.** The current installer does not check
-> for it, so without it the service will fail to start and MergePool's window will not open. The
-> "Desktop Runtime" download includes everything both the service and the UI need — you do not need
-> the SDK.
+Neither is bundled into setup: each is fetched from its own vendor while the installer runs, so the
+download stays small and you get the current build rather than one frozen when MergePool was
+released. Whatever is already on the machine is left alone — on a machine that has both, setup
+downloads nothing.
+
+> **.NET 9 or 10 is not a substitute.** MergePool targets .NET 8 and is framework-dependent, and a
+> framework-dependent application does not roll forward onto a newer major version by default. The
+> installer looks for 8.x specifically and will install it alongside whatever else you have.
+
+> **No internet on the machine?** Install the two by hand from the links above and then run setup:
+> it checks before it downloads, finds them, and goes straight to installing MergePool.
 
 You also need at least two drives you want to pool, though MergePool will happily make a pool out of
 one.
 
 ### 2. Install
 
-1. Download `MergePool-0.4.1-setup.exe`.
+1. Download `MergePool-0.12.0-setup.exe`.
 2. Run it and accept the UAC prompt.
 3. If WinFsp is missing, setup downloads and installs it before continuing. This needs an internet
    connection. If the download fails, setup tells you so and stops — install WinFsp yourself from
@@ -259,7 +267,7 @@ off or stop the service. If you would rather manage that yourself, untick the op
 
 | Path | What it is |
 | --- | --- |
-| `C:\Program Files\MergePool\versions\0.4.1\` | The program files for one version |
+| `C:\Program Files\MergePool\versions\0.12.0\` | The program files for one version |
 | `C:\Program Files\MergePool\current` | A junction pointing at the version in use |
 | `C:\ProgramData\MergePool\config.json` | Your pools and settings. Deliberately outside the program folder so updates never disturb it |
 | `<each pooled drive>\.PoolPart-{GUID}\` | Your pooled files, as ordinary files in the same folder structure you see in the pool |
@@ -303,7 +311,10 @@ WinFsp is left installed; remove it separately if you want it gone.
 
 Check the service is running: `Get-Service MergePool` in PowerShell. If it is stopped, start it with
 `Start-Service MergePool`. If it will not start, the usual causes are the .NET 8 Desktop Runtime
-missing, or WinFsp not installed.
+missing, or WinFsp not installed. Setup installs both, so this means one of them failed to install
+rather than that it was skipped — run setup again, or install the missing one by hand from
+[dot.net/download](https://dotnet.microsoft.com/download/dotnet/8.0) or [winfsp.dev](https://winfsp.dev).
+To check what is there: `dotnet --list-runtimes` should list a `Microsoft.WindowsDesktop.App 8.x`.
 
 **`Start-Service` says "Cannot open MergePool service on computer '.'"**
 
