@@ -12,6 +12,50 @@ change:
 - **Config schema** — `config.json` `schemaVersion`, migrated forward only, backed up first,
   unknown fields preserved.
 
+## [0.13.0] - 2026-11-14
+
+Data format: unchanged. Config schema: unchanged. IPC protocol: 8, unchanged.
+
+### Added
+
+- **The web interface can do everything the window can.** It could show you a pool and mount,
+  unmount or rebalance it; everything else meant walking to the computer. It now makes and removes
+  pools, adds and removes drives (keeping their files or moving them off first), sets every engine
+  tunable behind the same **Advanced** switch the window has, manages protected folders, sets up
+  network sharing, and checks for and installs updates. Each setting carries the same prose as the
+  window: what it does, what moving it costs, the value it ships with, and a mark when it is off
+  that value.
+- The page is laid out in tabs — Pools, Drives, Settings, Protected, Updates — and shows per-pool
+  **I/O health**, so a mount that has stopped answering is visible from a phone.
+- New endpoints: `POST /api/pools`, `DELETE /api/pools/{id}`, `POST /api/pools/{id}/remount`,
+  `GET|POST /api/settings`, `POST /api/settings/duplication`, `POST /api/settings/updates`,
+  `GET|POST /api/pools/{id}/share`, `GET /api/health`, and free drive letters on `GET /api/drives`.
+
+### Changed
+
+- **The page is told when it may not change anything.** `readOnly` on `/api/status` was hard-coded
+  false, so a look-but-not-touch interface still drew every button and only said no once one was
+  pressed. It now reflects the setting, and the page says so and disables what it cannot do.
+- A value typed into the browser is clamped exactly as one sent over the pipe is. A browser is no
+  more trustworthy than a text editor.
+
+### Security
+
+- **The web interface's own settings stay read-only in the browser**, and say why. Turning changes
+  off, or moving the port, from the page would cut the page off from the setting that undoes it — a
+  one-way door with no handle on this side. The window changes those.
+
+### Fixed
+
+- **The window now says why it did not start, and writes it down.** A report of "the app GUI is not
+  loading" had nothing anywhere to explain it: the window's unhandled-exception handler is attached
+  in `OnStartup`, and the two failures that look exactly like not loading both happen before that —
+  a resource dictionary that will not parse takes the application down inside
+  `InitializeComponent`, and a window started in the notification area looks identical to one that
+  never appeared. The application now logs its startup to `%ProgramData%\MergePool\ui.log` from its
+  constructor onwards, keeps the previous run beside it, catches a failure that early, and shows a
+  dialog naming the log. Starting in the notification area is recorded as exactly that.
+
 ## [0.12.0] - 2026-10-24
 
 Data format: unchanged. Config schema: unchanged. IPC protocol: 8, unchanged.

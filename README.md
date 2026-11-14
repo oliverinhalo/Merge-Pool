@@ -50,9 +50,12 @@ Full detail, including what to expect and what to do when something goes wrong, 
   WSL2 reach a pool, since a container cannot use the drive letter — see
   [docs/DOCKER.md](docs/DOCKER.md). Off until an account is named; MergePool never grants everyone,
   never opens your firewall, and never touches a share it did not create.
-- **Controllable from a browser**, on a port you choose, if you want it: the same pool status and
-  controls, served by the service on your own network. Off by default, access-token protected, and
-  bound to the local machine until you say otherwise.
+- **Controllable from a browser**, on a port you choose, if you want it — and it can do everything
+  the window can: make and remove pools, add and remove drives, every engine tunable behind the same
+  Advanced switch, protected folders, network sharing and updates. Off by default, access-token
+  protected, and bound to the local machine until you say otherwise. The one thing it will not change
+  is its own settings: turning changes off or moving the port from the browser would lock the browser
+  out of undoing it.
 - **Updates itself.** After the first install, new versions are downloaded, checksum-verified,
   unpacked beside the running one and switched to. Nothing is overwritten, your configuration and
   pooled files are never touched, and a version that does not come up healthy is rolled back.
@@ -107,16 +110,16 @@ See [docs/UPGRADES.md](docs/UPGRADES.md).
 | `src/MergePool.Ui` | WPF front end | Windows |
 | `src/MergePool.Updater` | Upgrade CLI | Windows |
 | `src/MergePool.Web` | Optional web interface: HTTP server, JSON API, single-page app | any OS |
-| `tests/` | 441 tests, all runnable on any OS | any OS |
+| `tests/` | 459 tests, all runnable on any OS | any OS |
 | `installer/` | Inno Setup script and the publish + package script | Windows |
 
 ## Status
 
-Version 0.11.0. All six milestones are in — core pool library, WinFsp mount, placement and throttle
+Version 0.13.0. All six milestones are in — core pool library, WinFsp mount, placement and throttle
 engine, service and IPC, WPF UI, installer and updater — plus growing and shrinking a live pool,
 measured pool usage, and updating itself from the release feed.
 
-441 tests pass on Linux and Windows. CI compiles the full Windows solution against a real WinFsp
+459 tests pass on Linux and Windows. CI compiles the full Windows solution against a real WinFsp
 install and builds the installer, so a `[Code]` change that will not compile fails there rather than
 on a user's machine.
 
