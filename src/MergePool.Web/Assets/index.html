@@ -178,8 +178,94 @@
 
     footer { color: var(--muted); font-size: 12px; text-align: center; padding: 24px 0 0; }
 
+    /* ---- Tabs ---- */
+    nav.tabs {
+      display: flex; gap: 4px; margin: 0 0 16px;
+      background: var(--inset); border: 1px solid var(--border);
+      border-radius: 999px; padding: 4px; overflow-x: auto;
+    }
+    nav.tabs button {
+      border: 0; background: transparent; color: var(--muted);
+      border-radius: 999px; padding: 7px 15px; font-weight: 600; font-size: 13px;
+      white-space: nowrap;
+    }
+    nav.tabs button[aria-selected=true] { background: var(--surface); color: var(--text); }
+    nav.tabs button:hover:not([aria-selected=true]) { color: var(--text); }
+
+    /* ---- A switch, for the settings that turn something on ---- */
+    .switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }
+    .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+    .switch .track {
+      width: 40px; height: 22px; flex: none; border-radius: 999px;
+      background: var(--track); border: 1px solid var(--border-strong);
+      position: relative; transition: background .12s, border-color .12s;
+    }
+    .switch .track::after {
+      content: ""; position: absolute; top: 2px; left: 2px;
+      width: 16px; height: 16px; border-radius: 999px;
+      background: var(--surface); border: 1px solid var(--border-strong);
+      transition: transform .12s;
+    }
+    .switch input:checked + .track { background: var(--accent); border-color: var(--accent); }
+    .switch input:checked + .track::after { transform: translateX(18px); background: #fff; border-color: #fff; }
+    .switch input:focus-visible + .track { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+    /* ---- One setting ---- */
+    .setting {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 14px; margin-bottom: 10px;
+    }
+    .setting .head { display: flex; align-items: center; gap: 10px; }
+    .setting .title { font-size: 13px; font-weight: 600; flex: 1 1 auto; }
+    .setting .value {
+      font-size: 12px; font-weight: 600; color: var(--accent);
+      background: var(--accent-soft); border-radius: 999px; padding: 2px 9px; flex: none;
+    }
+    .setting .changed {
+      font-size: 11px; font-weight: 600; color: var(--warning);
+      background: var(--warning-soft); border-radius: 999px; padding: 2px 8px; flex: none;
+    }
+    .setting .summary { font-size: 13px; margin: 8px 0 6px; }
+    .setting .explain, .setting .effect { font-size: 12px; color: var(--muted); margin: 0 0 4px; }
+    .setting .ships { font-size: 11px; color: var(--muted); margin-top: 6px; display: flex; gap: 10px; align-items: center; }
+    .setting .ships button { padding: 3px 8px; font-size: 11px; border: 0; background: transparent; color: var(--accent); }
+    .setting .ends { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+
+    input[type=range] { width: 100%; margin: 10px 0 2px; accent-color: var(--accent); }
+    input[type=number], select {
+      font: inherit; font-size: 14px; width: 100%;
+      padding: 9px 11px; border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong); background: var(--surface); color: var(--text);
+    }
+
+    .field { margin-bottom: 12px; }
+    .field > .label { margin-bottom: 4px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    .group-head { display: flex; align-items: baseline; gap: 10px; margin: 20px 0 2px; }
+    .group-head h2 { margin: 0; flex: 1 1 auto; }
+    .group-head .count { font-size: 11px; color: var(--muted); }
+
+    .checks { display: grid; gap: 10px; max-height: 220px; overflow-y: auto; padding: 2px; }
+    .checks label { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; }
+
+    .mono {
+      font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px;
+      background: var(--inset); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 10px; overflow-x: auto;
+      white-space: pre-wrap; word-break: break-all;
+    }
+
+    .save-bar {
+      position: sticky; bottom: 0; z-index: 5;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 13px 15px; margin-top: 14px;
+      box-shadow: 0 -6px 18px rgba(0,0,0,.06);
+    }
+
     @media (max-width: 640px) {
       .cols { grid-template-columns: 1fr; gap: 14px; }
+      .grid2 { grid-template-columns: 1fr; }
       .row { flex-wrap: wrap; }
       .row .side { text-align: left; }
     }
@@ -215,15 +301,100 @@
           <h1>MergePool</h1>
           <p class="sub" id="subtitle">Connecting&hellip;</p>
         </div>
+        <label class="switch" id="advanced-wrap" title="Shows every tunable the engine has, each with what it does and what it ships with. Changes nothing on its own.">
+          <input type="checkbox" id="advanced" />
+          <span class="track"></span>
+          <span style="font-size:12px;font-weight:600;color:var(--muted)">Advanced</span>
+        </label>
         <span class="pill" id="health"><span class="dot"></span><span id="health-text">Connected</span></span>
       </header>
 
-      <div id="problems"></div>
-      <div id="pools"></div>
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="pools" aria-selected="true">Pools</button>
+        <button role="tab" data-tab="drives" aria-selected="false">Drives</button>
+        <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
+        <button role="tab" data-tab="protected" aria-selected="false">Protected</button>
+        <button role="tab" data-tab="updates" aria-selected="false">Updates</button>
+      </nav>
 
-      <section class="card">
-        <h2>Drives not in a pool</h2>
-        <div id="free-drives" class="muted">Loading&hellip;</div>
+      <div id="read-only-note" class="banner warn" hidden>
+        This page is set to look but not touch, so nothing here can be changed. Turn on
+        <strong>Let the browser make changes</strong> in MergePool&rsquo;s window, under Remote.
+      </div>
+
+      <div id="problems"></div>
+
+      <!-- Pools -->
+      <section data-panel="pools">
+        <div id="pools"></div>
+        <div id="io-health"></div>
+      </section>
+
+      <!-- Drives, and making a pool out of them -->
+      <section data-panel="drives" hidden>
+        <div class="card">
+          <h2>Make a pool</h2>
+          <p class="muted" style="margin-top:0">
+            Tick the drives you want, give the pool a name and a letter. Nothing already on those
+            drives is touched unless you say so below.
+          </p>
+          <div class="grid2">
+            <div class="field">
+              <p class="label">POOL NAME</p>
+              <input type="text" id="new-pool-name" value="Pool" />
+            </div>
+            <div class="field">
+              <p class="label">DRIVE LETTER</p>
+              <select id="new-pool-letter"></select>
+            </div>
+          </div>
+          <p class="label">DRIVES</p>
+          <div class="checks" id="new-pool-drives"></div>
+          <label class="switch" style="margin-top:14px;align-items:flex-start">
+            <input type="checkbox" id="new-pool-adopt" />
+            <span class="track"></span>
+            <span style="font-size:12px;color:var(--muted)">
+              Also move each drive&rsquo;s existing files into the pool. A rename within the same
+              drive &mdash; nothing is copied between drives, and Windows folders are never touched.
+              Leave this off if the data is irreplaceable.
+            </span>
+          </label>
+          <div class="actions">
+            <button class="primary" id="create-pool">Create pool</button>
+          </div>
+          <p class="muted" id="create-pool-message"></p>
+        </div>
+
+        <section class="card">
+          <h2>Every drive on the machine</h2>
+          <div id="free-drives" class="muted">Loading&hellip;</div>
+        </section>
+      </section>
+
+      <!-- Settings -->
+      <section data-panel="settings" hidden>
+        <div class="card">
+          <h2>How MergePool decides things</h2>
+          <p class="muted" id="settings-scope" style="margin:0"></p>
+        </div>
+        <div id="settings-groups"></div>
+        <div class="save-bar">
+          <div class="actions" style="margin-top:0">
+            <button class="primary" id="save-settings">Save settings</button>
+            <button id="reset-settings">Back to defaults</button>
+          </div>
+          <p class="muted" id="settings-message" style="margin:8px 0 0"></p>
+        </div>
+      </section>
+
+      <!-- Protected folders -->
+      <section data-panel="protected" hidden>
+        <div id="protected-pools"></div>
+      </section>
+
+      <!-- Updates -->
+      <section data-panel="updates" hidden>
+        <div id="updates-panel"></div>
       </section>
 
       <div class="actions">

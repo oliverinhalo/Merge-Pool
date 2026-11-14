@@ -21,9 +21,69 @@ public partial class App : Application
     private SingleInstance? _instance;
     private bool _reallyExiting;
 
+    /// <summary>
+    /// Runs before <c>InitializeComponent</c>, which is the point: a resource dictionary that will
+    /// not parse takes the application down inside that call, before <c>OnStartup</c> and before the
+    /// dispatcher handler exists. Until this constructor existed, that failure produced nothing at
+    /// all — no window, no message, nothing written down — which is exactly what "the app is not
+    /// loading" looks like from outside.
+    /// </summary>
+    public App()
+    {
+        StartupLog.Begin(Version());
+        StartupLog.Write("Application constructed. Parsing App.xaml next.");
+
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
+            if (args.ExceptionObject is Exception exception)
+            {
+                StartupLog.Failure("startup", exception);
+                ReportFatal(exception);
+            }
+        };
+    }
+
+    private static string Version()
+    {
+        var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+        var informational = System.Reflection.CustomAttributeExtensions
+            .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(assembly);
+
+        return informational?.InformationalVersion.Split('+')[0]
+            ?? assembly.GetName().Version?.ToString(3)
+            ?? "0.0.0";
+    }
+
+    /// <summary>
+    /// Says why the window is not there, and where to find the detail. A dialog rather than a log
+    /// line alone, because somebody is standing in front of a window that did not open.
+    /// </summary>
+    private static void ReportFatal(Exception exception)
+    {
+        try
+        {
+            MessageBox.Show(
+                "MergePool's window could not start.\n\n"
+                + exception.Message
+                + (StartupLog.Path is { } path ? $"\n\nWhat happened is written in:\n{path}" : string.Empty)
+                + "\n\nYour pools are unaffected: the MergePool service mounts them whether or not "
+                + "this window runs.",
+                "MergePool",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+        catch (Exception)
+        {
+            // A failure this early can leave no message loop to show a dialog on. The log is the
+            // fallback, and it has already been written.
+        }
+    }
+
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        StartupLog.Write("App.xaml parsed. OnStartup running.");
 
         if (HandOverToNewerVersion(e.Args))
         {
@@ -62,8 +122,12 @@ public partial class App : Application
         _viewModel.Updates.RelaunchWindow = RelaunchWindow;
         _viewModel.Duplication.ConfirmAction = Confirm;
 
+        StartupLog.Write("View models built. Building the window (parses MainWindow.xaml).");
+
         _window = new MainWindow { DataContext = _viewModel };
         _window.Closing += OnWindowClosing;
+
+        StartupLog.Write("Window built.");
 
         // The window can be closed without the app going away: MergePool is a thing you leave
         // running, and the tray is where it lives when it is not in front of you.
@@ -79,9 +143,19 @@ public partial class App : Application
         if (!startHidden)
         {
             _window.Show();
+            StartupLog.Write("Window shown.");
+        }
+        else
+        {
+            // Worth recording: a window that started in the notification area on purpose looks
+            // exactly like one that failed to appear.
+            StartupLog.Write(
+                "Started in the notification area (--tray), so no window is on screen. "
+                + "Open it from the MergePool icon by the clock.");
         }
 
         await _viewModel.StartAsync();
+        StartupLog.Write("Connected to the service. Startup finished.");
     }
 
     /// <summary>
@@ -369,8 +443,11 @@ public partial class App : Application
             return;
         }
 
+        StartupLog.Failure("the window", e.Exception);
+
         MessageBox.Show(
             $"MergePool's window hit an unexpected error:\n\n{e.Exception.Message}\n\n"
+            + (StartupLog.Path is { } path ? $"What happened is written in:\n{path}\n\n" : string.Empty)
             + "Your pools are unaffected — the MergePool service keeps them mounted.",
             "MergePool",
             MessageBoxButton.OK,
